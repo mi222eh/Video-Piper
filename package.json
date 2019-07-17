@@ -1,6 +1,6 @@
 {
   "name": "videopiper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Download online videos",
   "productName": "Meeks Video Piper",
   "cordovaId": "org.cordova.quasar.app",
@@ -12,12 +12,17 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.0.0",
+    "avconv": "^3.1.0",
     "axios": "^0.18.1",
+    "command-exists": "^1.2.8",
+    "ffmpeg-static": "^2.5.0",
     "quasar": "^1.0.0",
-    "youtube-dl": "^2.0.0"
+    "youtube-dl": "^2.0.0",
+    "ytdl-core": "^0.29.3"
   },
   "devDependencies": {
     "@quasar/app": "^1.0.0",
+    "@quasar/quasar-app-extension-icon-genie": "^1.0.1",
     "@vue/eslint-config-standard": "^4.0.0",
     "babel-eslint": "^10.0.1",
     "devtron": "^1.4.0",

@@ -54,7 +54,10 @@ module.exports = function (ctx) {
         'QDialog',
         'QSpinner',
         'QLinearProgress',
-        'QBar'
+        'QBar',
+        'QImg',
+        'QAvatar',
+        'QSelect'
       ],
 
       directives: [
