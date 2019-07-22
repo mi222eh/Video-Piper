@@ -71,7 +71,13 @@ module.exports = function (ctx) {
       // Quasar plugins
       plugins: [
         'Notify'
-      ]
+      ],
+      config: {
+        notify: {
+          color: 'negative',
+          timeout: 1000
+        }
+      }
     },
 
     supportIE: false,
