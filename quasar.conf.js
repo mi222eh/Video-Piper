@@ -57,7 +57,10 @@ module.exports = function (ctx) {
         'QBar',
         'QImg',
         'QAvatar',
-        'QSelect'
+        'QSelect',
+        'QExpansionItem',
+        'QSpace',
+        'QSeparator'
       ],
 
       directives: [
@@ -68,7 +71,13 @@ module.exports = function (ctx) {
       // Quasar plugins
       plugins: [
         'Notify'
-      ]
+      ],
+      config: {
+        notify: {
+          color: 'negative',
+          timeout: 1000
+        }
+      }
     },
 
     supportIE: false,
