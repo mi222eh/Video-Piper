@@ -245,7 +245,7 @@ export default {
 
       const formatIds = this.ChosenFormat.format_id.split('+');
       const isSplit = formatIds.length > 1;
-      const filename = `${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`.replace('|', '').replace('  ', ' ');
+      const filename = `${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`;
 
       let filePath = path.join(this.Directory, filename);
       let tempFileNames = [];
@@ -258,12 +258,8 @@ export default {
         .then((info) => {
           console.log('download info:', info);
           infos[0] = info;
+          tempFileNames[0] = `${info.format_id}.${info.ext}`;
 
-          if (isSplit) {
-            tempFileNames[0] = `${info.format_id}.${info.ext}`;
-          } else {
-            tempFileNames[0] = `${this.InfoSection.data.fulltitle}${info.height ? ` - ${info.height}P` : ''}.${info.ext}`.replace('|', '').replace('  ', ' '); ;
-          }
           filePath = path.join(this.Directory, tempFileNames[0]);
           this.DownloadSection.status = 'Downloading';
           intervalId = setInterval(() => {
@@ -276,21 +272,14 @@ export default {
           }, 200);
           return this.StartVideoStream(this.CurrentVideoUrl, this.Directory, tempFileNames[0], info.format_id);
         })
-        .then((result) => {
-          if (!isSplit) return;
-          console.log(result);
+        .then(() => {
           clearInterval(intervalId);
-          if (!isSplit) {
-            throw String('');
-          }
-          return '';
-        }).then(() => {
           if (!isSplit) return;
           this.DownloadSection.status = 'Getting second part information';
           return this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[1]]);
         }).then((info) => {
           if (!isSplit) return;
-          console.log('Audio info:', info);
+          console.log('Second info:', info);
           infos[1] = info;
 
           tempFileNames[1] = `${info.format_id}.${info.ext}`;
@@ -312,8 +301,9 @@ export default {
             console.log(result);
             clearInterval(intervalId);
             this.DownloadSection.status = 'Combining audio and video';
+            tempFileNames[2] = `${infos[0].format_id}${infos[1].format_id}.${this.ChosenFormat.ext}`;
 
-            filePath = path.join(this.Directory, filename);
+            filePath = path.join(this.Directory, tempFileNames[2]);
             intervalId = setInterval(() => {
               fs.stat(filePath, (error, stat) => {
                 if (error) return console.error(error);
@@ -322,11 +312,12 @@ export default {
               });
             }, 200);
 
-            return this.CombineVideoAndAudio(this.Directory, tempFileNames[0], tempFileNames[1], filename);
+            return this.CombineVideoAndAudio(this.Directory, tempFileNames[0], tempFileNames[1], tempFileNames[2]);
           } else {
             if (infos[0].ext !== this.ChosenFormat.ext) {
-              this.DownloadSection.status = 'Converting';
-              filePath = path.join(this.Directory, filename);
+              this.DownloadSection.status = 'Converting to ' + this.ChosenFormat.ext;
+              tempFileNames[1] = `${infos[0].format_id}.${this.ChosenFormat.ext}`;
+              filePath = path.join(this.Directory, tempFileNames[1]);
               intervalId = setInterval(() => {
                 fs.stat(filePath, (error, stat) => {
                   if (error) return console.error(error);
@@ -334,19 +325,19 @@ export default {
                   this.DownloadSection.progress = size / this.ChosenFormat.filesize;
                 });
               }, 200);
-              return this.ConvertFile(this.Directory, tempFileNames[0], filename);
+              return this.ConvertFile(this.Directory, tempFileNames[0], tempFileNames[1]);
             }
           }
-          return true;
-        }).then((skipClean) => {
+        }).then(() => {
           clearInterval(intervalId);
           this.DownloadSection.progress = 1;
-          if (skipClean) {
-            return;
-          }
-          tempFileNames.forEach((name) => {
-            fs.unlink(path.join(this.Directory, name), (err) => {
-              if (err) console.error(err);
+          const changeFrom = tempFileNames[tempFileNames.length - 1];
+          fs.rename(path.join(this.Directory, changeFrom), path.join(this.Directory, filename), (err) => {
+            if (err) return console.error(err);
+            tempFileNames.forEach((name) => {
+              fs.unlink(path.join(this.Directory, name), (err) => {
+                if (err);
+              });
             });
           });
         }).catch((err) => {
