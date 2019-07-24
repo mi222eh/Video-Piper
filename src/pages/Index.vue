@@ -110,13 +110,22 @@
         </q-card-section>
         <q-separator />
 
+        <q-linear-progress stripe style="height: 15px" :value="this.DownloadSection.progress" />
+
+        <q-separator />
+
         <!--STATUS-->
         <q-card-section>
-          <div v-if="DownloadSection.isFinished" style="color:green">Completed</div>
+          <div v-if="DownloadSection.isFinished">
+            <div v-if="DownloadSection.failed">
+              Error: {{DownloadSection.errorMessage}}
+            </div>
+            <div v-else style="color:green">
+              Completed
+            </div>
+            </div>
           <div v-else>{{DownloadSection.status}}</div>
         </q-card-section>
-
-        <q-linear-progress stripe style="height: 15px" :value="this.DownloadSection.progress" />
 
         <!--DIALOG CLOSE BUTTON-->
         <q-card-actions align="right" class="bg-white text-teal">
@@ -128,10 +137,10 @@
 </template>
 
 <script>
-import youtubedl from 'youtube-dl';
-import fs from 'fs';
+import fs from 'fs-extra';
 import path from 'path';
 import { execFile } from 'child_process';
+import sanitizeFilename from 'sanitize-filename';
 
 export default {
   name: 'PageIndex',
@@ -242,10 +251,12 @@ export default {
       this.ShowDownloadDialog = true;
       this.DownloadSection.isFinished = false;
       this.DownloadSection.progress = 0;
+      this.DownloadSection.failed = false;
 
       const formatIds = this.ChosenFormat.format_id.split('+');
       const isSplit = formatIds.length > 1;
-      const filename = `${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`;
+      const tempFolder = this.InfoSection.data.id;
+      const filename = this.RemoveIllegalFilenameCharacters(`${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`);
 
       let filePath = path.join(this.Directory, filename);
       let tempFileNames = [];
@@ -253,14 +264,16 @@ export default {
       let totalDownloaded = [0, 0];
       let infos = [];
 
+      fs.mkdirp(path.join(this.Directory, tempFolder));
+
       this.DownloadSection.status = 'Getting information';
       this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[0]])
         .then((info) => {
           console.log('download info:', info);
           infos[0] = info;
-          tempFileNames[0] = `${info.format_id}.${info.ext}`;
+          tempFileNames[0] = `${info.id}-${info.format_id}.${info.ext}`;
 
-          filePath = path.join(this.Directory, tempFileNames[0]);
+          filePath = path.join(this.Directory, tempFolder, tempFileNames[0]);
           this.DownloadSection.status = 'Downloading';
           intervalId = setInterval(() => {
             fs.stat(filePath, (error, stat) => {
@@ -270,7 +283,7 @@ export default {
               this.DownloadSection.progress = totalDownloaded.reduce((a, b) => a + b, 0) / this.ChosenFormat.filesize;
             });
           }, 200);
-          return this.StartVideoStream(this.CurrentVideoUrl, this.Directory, tempFileNames[0], info.format_id);
+          return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[0], info.format_id);
         })
         .then(() => {
           clearInterval(intervalId);
@@ -282,8 +295,8 @@ export default {
           console.log('Second info:', info);
           infos[1] = info;
 
-          tempFileNames[1] = `${info.format_id}.${info.ext}`;
-          filePath = path.join(this.Directory, tempFileNames[1]);
+          tempFileNames[1] = `${info.id}-${info.format_id}.${info.ext}`;
+          filePath = path.join(this.Directory, tempFolder, tempFileNames[1]);
           this.DownloadSection.status = 'Downloading second part';
           intervalId = setInterval(() => {
             fs.stat(filePath, (error, stat) => {
@@ -294,30 +307,30 @@ export default {
             });
           }, 200);
 
-          return this.StartVideoStream(this.CurrentVideoUrl, this.Directory, tempFileNames[1], info.format_id);
+          return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[1], info.format_id);
         }).then((result) => {
           this.DownloadSection.progress = 0;
           if (isSplit) {
             console.log(result);
             clearInterval(intervalId);
-            this.DownloadSection.status = 'Combining audio and video';
-            tempFileNames[2] = `${infos[0].format_id}${infos[1].format_id}.${this.ChosenFormat.ext}`;
+            this.DownloadSection.status = 'Combining video and audio to ' + this.ChosenFormat.ext;
+            tempFileNames[2] = `${infos[0].id}-${infos[0].format_id}-${infos[1].format_id}.${this.ChosenFormat.ext}`;
 
-            filePath = path.join(this.Directory, tempFileNames[2]);
+            filePath = path.join(this.Directory, tempFolder, tempFileNames[2]);
             intervalId = setInterval(() => {
               fs.stat(filePath, (error, stat) => {
-                if (error) return console.error(error);
+                if (error) return;
                 const size = stat.size;
                 this.DownloadSection.progress = size / this.ChosenFormat.filesize;
               });
             }, 200);
 
-            return this.CombineVideoAndAudio(this.Directory, tempFileNames[0], tempFileNames[1], tempFileNames[2]);
+            return this.CombineVideoAndAudio(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1], tempFileNames[2]);
           } else {
             if (infos[0].ext !== this.ChosenFormat.ext) {
               this.DownloadSection.status = 'Converting to ' + this.ChosenFormat.ext;
-              tempFileNames[1] = `${infos[0].format_id}.${this.ChosenFormat.ext}`;
-              filePath = path.join(this.Directory, tempFileNames[1]);
+              tempFileNames[1] = `${infos[0].id}-${infos[0].format_id}.${this.ChosenFormat.ext}`;
+              filePath = path.join(this.Directory, tempFolder, tempFileNames[1]);
               intervalId = setInterval(() => {
                 fs.stat(filePath, (error, stat) => {
                   if (error) return console.error(error);
@@ -325,23 +338,22 @@ export default {
                   this.DownloadSection.progress = size / this.ChosenFormat.filesize;
                 });
               }, 200);
-              return this.ConvertFile(this.Directory, tempFileNames[0], tempFileNames[1]);
+              return this.ConvertFile(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1]);
             }
           }
         }).then(() => {
           clearInterval(intervalId);
-          this.DownloadSection.progress = 1;
-          const changeFrom = tempFileNames[tempFileNames.length - 1];
-          fs.rename(path.join(this.Directory, changeFrom), path.join(this.Directory, filename), (err) => {
-            if (err) return console.error(err);
-            tempFileNames.forEach((name) => {
-              fs.unlink(path.join(this.Directory, name), (err) => {
-                if (err);
-              });
-            });
-          });
+          const changeFrom = tempFileNames.pop();
+          console.log(`Changing name from ${changeFrom} to ${filename}`);
+          return fs.move(path.join(this.Directory, tempFolder, changeFrom), path.join(this.Directory, filename));
+        }).then(() => {
+          return fs.remove(path.join(this.Directory, tempFolder));
         }).catch((err) => {
-          if (err) console.error(err);
+          if (err) {
+            console.error(err);
+            this.DownloadSection.failed = true;
+            this.DownloadSection.errorMessage = err.toString();
+          }
         }).finally(() => {
           this.DownloadSection.progress = 1;
           this.DownloadSection.isFinished = true;
@@ -349,7 +361,8 @@ export default {
     },
     StartVideoStream: function (url, directory, filename, format) {
       return new Promise((resolve, reject) => {
-        youtubedl.exec(url, ['-f', format, '-o', filename, '--no-part'], {
+        const youtubedl = path.join(__statics, 'youtube-dl', 'bin', 'youtube-dl.exe');
+        execFile(youtubedl, ['-f', format, '-o', filename, '--no-part', url], {
           cwd: directory
         },
         function Done (err, output) {
@@ -364,7 +377,8 @@ export default {
       }
 
       return new Promise((resolve, reject) => {
-        youtubedl.exec(this.CurrentVideoUrl, ['--print-json', '-s', ...args], {}, (err, output) => {
+        const youtubedl = path.join(__statics, 'youtube-dl', 'bin', 'youtube-dl.exe');
+        execFile(youtubedl, ['--print-json', '-s', ...args, url], {}, (err, output) => {
           if (err) {
             reject(err);
           } else {
@@ -416,6 +430,11 @@ export default {
     },
     ShowFormatsDialog: function () {
       this.ShowFormats = true;
+    },
+    RemoveIllegalFilenameCharacters: function (filename) {
+      filename = sanitizeFilename(filename);
+      filename = filename.replace('  ', ' ');
+      return filename;
     }
   },
   data () {
@@ -459,7 +478,9 @@ export default {
         data: {},
         progress: 0,
         isFinished: false,
-        status
+        status: '',
+        failed: false,
+        errorMessage: ''
       }
     };
   }

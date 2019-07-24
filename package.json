@@ -16,8 +16,9 @@
     "axios": "^0.18.1",
     "command-exists": "^1.2.8",
     "ffmpeg-static": "^2.5.0",
+    "fs-extra": "^8.1.0",
     "quasar": "^1.0.0",
-    "youtube-dl": "^2.0.0",
+    "sanitize-filename": "^1.6.1",
     "ytdl-core": "^0.29.3"
   },
   "devDependencies": {
