@@ -110,7 +110,11 @@
         </q-card-section>
         <q-separator />
 
-        <q-linear-progress stripe style="height: 15px" :value="this.DownloadSection.progress" />
+        <q-linear-progress v-if="DownloadSection.progress === -1" query style="height: 15px" :value="this.DownloadSection.progress" />
+
+        <q-linear-progress v-else-if="DownloadSection.progress === 404 " indeterminate stripe style="height: 15px" :value="this.DownloadSection.progress" />
+
+        <q-linear-progress v-else stripe style="height: 15px" :value="DownloadSection.progress" />
 
         <q-separator />
 
@@ -258,14 +262,12 @@ export default {
       const tempFolder = this.InfoSection.data.id;
       const filename = this.RemoveIllegalFilenameCharacters(`${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`);
 
-      let filePath = path.join(this.Directory, filename);
       let tempFileNames = [];
-      let intervalId;
-      let totalDownloaded = [0, 0];
       let infos = [];
 
       fs.mkdirp(path.join(this.Directory, tempFolder));
 
+      this.DownloadSection.progress = -1;
       this.DownloadSection.status = 'Getting information';
       this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[0]])
         .then((info) => {
@@ -273,22 +275,24 @@ export default {
           infos[0] = info;
           tempFileNames[0] = `${info.id}-${info.format_id}.${info.ext}`;
 
-          filePath = path.join(this.Directory, tempFolder, tempFileNames[0]);
           this.DownloadSection.status = 'Downloading';
-          intervalId = setInterval(() => {
-            fs.stat(filePath, (error, stat) => {
-              if (error) return;
-              const size = stat.size;
-              totalDownloaded[0] = size;
-              this.DownloadSection.progress = totalDownloaded.reduce((a, b) => a + b, 0) / this.ChosenFormat.filesize;
-            });
-          }, 200);
+          fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[0]), {
+            interval: 200
+          }, (current, previous) => {
+            if (info.filesize) {
+              this.DownloadSection.progress = current.size / info.filesize;
+              return;
+            }
+            this.DownloadSection.progress = 404;
+          });
           return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[0], info.format_id);
         })
         .then(() => {
-          clearInterval(intervalId);
+          fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[0]));
           if (!isSplit) return;
+          this.DownloadSection.progress = 0;
           this.DownloadSection.status = 'Getting second part information';
+          this.DownloadSection.progress = -1;
           return this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[1]]);
         }).then((info) => {
           if (!isSplit) return;
@@ -296,55 +300,48 @@ export default {
           infos[1] = info;
 
           tempFileNames[1] = `${info.id}-${info.format_id}.${info.ext}`;
-          filePath = path.join(this.Directory, tempFolder, tempFileNames[1]);
           this.DownloadSection.status = 'Downloading second part';
-          intervalId = setInterval(() => {
-            fs.stat(filePath, (error, stat) => {
-              if (error) return;
-              const size = stat.size;
-              totalDownloaded[1] = size;
-              this.DownloadSection.progress = totalDownloaded.reduce((a, b) => a + b, 0) / this.ChosenFormat.filesize;
-            });
-          }, 200);
+          fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[1]), {
+            interval: 200
+          }, (current, previous) => {
+            if (info.filesize) {
+              this.DownloadSection.progress = current.size / info.filesize;
+              return;
+            }
+            this.DownloadSection.progress = current.size / info.filesize;
+          });
 
           return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[1], info.format_id);
         }).then((result) => {
           this.DownloadSection.progress = 0;
           if (isSplit) {
             console.log(result);
-            clearInterval(intervalId);
-            this.DownloadSection.status = 'Combining video and audio to ' + this.ChosenFormat.ext;
+            fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[1]));
+            this.DownloadSection.status = 'Combining parts to ' + this.ChosenFormat.ext;
             tempFileNames[2] = `${infos[0].id}-${infos[0].format_id}-${infos[1].format_id}.${this.ChosenFormat.ext}`;
-
-            filePath = path.join(this.Directory, tempFolder, tempFileNames[2]);
-            intervalId = setInterval(() => {
-              fs.stat(filePath, (error, stat) => {
-                if (error) return;
-                const size = stat.size;
-                this.DownloadSection.progress = size / this.ChosenFormat.filesize;
-              });
-            }, 200);
+            console.log(infos);
+            fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[2]), {
+              interval: 200
+            }, (current, previous) => {
+              this.DownloadSection.progress = current.size / (infos[0].filesize + infos[1].filesize);
+            });
 
             return this.CombineVideoAndAudio(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1], tempFileNames[2]);
           } else {
             if (infos[0].ext !== this.ChosenFormat.ext) {
               this.DownloadSection.status = 'Converting to ' + this.ChosenFormat.ext;
               tempFileNames[1] = `${infos[0].id}-${infos[0].format_id}.${this.ChosenFormat.ext}`;
-              filePath = path.join(this.Directory, tempFolder, tempFileNames[1]);
-              intervalId = setInterval(() => {
-                fs.stat(filePath, (error, stat) => {
-                  if (error) return console.error(error);
-                  const size = stat.size;
-                  this.DownloadSection.progress = size / this.ChosenFormat.filesize;
-                });
-              }, 200);
+              fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[1]), {
+                interval: 200
+              }, (current, previous) => {
+                this.DownloadSection.progress = current.size / infos[0].filesize;
+              });
               return this.ConvertFile(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1]);
             }
           }
         }).then(() => {
-          clearInterval(intervalId);
+          fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[tempFileNames.length - 1]));
           const changeFrom = tempFileNames.pop();
-          console.log(`Changing name from ${changeFrom} to ${filename}`);
           return fs.move(path.join(this.Directory, tempFolder, changeFrom), path.join(this.Directory, filename));
         }).then(() => {
           return fs.remove(path.join(this.Directory, tempFolder));
