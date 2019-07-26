@@ -134,6 +134,7 @@
         <!--DIALOG CLOSE BUTTON-->
         <q-card-actions align="right" class="bg-white text-teal">
           <q-btn flat v-if="DownloadSection.isFinished" label="OK" v-close-popup />
+          <q-btn flat v-else label="Cancel" @click="DownloadSection.closeCurrentProcess('User cancelled')"/>
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -144,6 +145,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { execFile } from 'child_process';
+import terminate from 'terminate';
 import sanitizeFilename from 'sanitize-filename';
 
 export default {
@@ -189,8 +191,20 @@ export default {
           const videoOnly = info.formats.filter(format => format.acodec === 'none');
           const audioAndVideo = info.formats.filter(format => format.vcodec !== 'none' && format.acodec !== 'none');
 
+          const best1080pVideo = info.formats.filter(format => format.width === 1920).reduce((accumulator, currentValue, currentIndex, array) => {
+            console.log('acc: ', accumulator);
+            console.log('acurr: ', currentValue);
+            if (accumulator === false) {
+              return currentValue;
+            }
+            if (currentValue.filesize > accumulator.filesize) {
+              return currentValue;
+            }
+            return accumulator;
+          }, false);
+
           const bestAudioAndVideoPreset = {
-            abr: 50,
+            abr: bestAudio.abr,
             acodec: bestAudio.acodec,
             ext: 'mp4',
             filesize: bestAudio.filesize + bestVideo.filesize,
@@ -201,8 +215,9 @@ export default {
             height: bestVideo.height,
             vcodec: bestVideo.vcodec
           };
+          let best1080VideoPreset = {};
           const bestAudioPreset = {
-            abr: 50,
+            abr: bestAudio.abr,
             acodec: bestAudio.acodec,
             ext: 'mp3',
             filesize: bestAudio.filesize,
@@ -212,7 +227,6 @@ export default {
             quality: -1
           };
           const bestVideoPreset = {
-            abr: 50,
             ext: 'mp4',
             filesize: bestVideo.filesize,
             format: 'Best video',
@@ -222,12 +236,28 @@ export default {
             height: bestVideo.height,
             vcodec: bestVideo.vcodec
           };
+          if (best1080pVideo) {
+            best1080VideoPreset = {
+              abr: bestAudio.abr,
+              ext: 'mp4',
+              filesize: best1080pVideo.filesize + bestAudio.filesize,
+              format: 'Best 1080P video and audio',
+              format_id: best1080pVideo.format_id + '+' + bestAudio.format_id,
+              format_note: 'Best 1080P video and audio',
+              quality: -1,
+              height: best1080pVideo.height,
+              vcodec: best1080pVideo.vcodec
+            };
+          }
 
           this.InfoSection.formats.audio.list = audioOnly;
           this.InfoSection.formats.video.list = videoOnly;
           this.InfoSection.formats.audioAndVideo.list = audioAndVideo;
 
           this.InfoSection.formats.custom.list.push(bestAudioAndVideoPreset);
+          if (best1080pVideo) {
+            this.InfoSection.formats.custom.list.push(best1080VideoPreset);
+          }
           this.InfoSection.formats.custom.list.push(bestAudioPreset);
           this.InfoSection.formats.custom.list.push(bestVideoPreset);
 
@@ -237,6 +267,8 @@ export default {
         this.InfoSection.Show = true;
       }).catch((err) => {
         if (isSecondTry) {
+          this.$q.notify('Error getting video information');
+          this.IsGettingVideoInformation = false;
           return console.error(err);
         }
         this.DownloadVideoInfo(true);
@@ -312,25 +344,24 @@ export default {
           });
 
           return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[1], info.format_id);
-        }).then((result) => {
+        }).then(async (result) => {
           this.DownloadSection.progress = 0;
           if (isSplit) {
-            console.log(result);
-            fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[1]));
             this.DownloadSection.status = 'Combining parts to ' + this.ChosenFormat.ext;
+            fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[1]));
             tempFileNames[2] = `${infos[0].id}-${infos[0].format_id}-${infos[1].format_id}.${this.ChosenFormat.ext}`;
-            console.log(infos);
+            await fs.remove(path.join(this.Directory, tempFolder, tempFileNames[2]));
             fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[2]), {
               interval: 200
             }, (current, previous) => {
               this.DownloadSection.progress = current.size / (infos[0].filesize + infos[1].filesize);
             });
-
             return this.CombineVideoAndAudio(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1], tempFileNames[2]);
           } else {
             if (infos[0].ext !== this.ChosenFormat.ext) {
               this.DownloadSection.status = 'Converting to ' + this.ChosenFormat.ext;
               tempFileNames[1] = `${infos[0].id}-${infos[0].format_id}.${this.ChosenFormat.ext}`;
+              await fs.remove(path.join(this.Directory, tempFolder, tempFileNames[1]));
               fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[1]), {
                 interval: 200
               }, (current, previous) => {
@@ -346,11 +377,14 @@ export default {
         }).then(() => {
           return fs.remove(path.join(this.Directory, tempFolder));
         }).catch((err) => {
-          if (err) {
-            console.error(err);
-            this.DownloadSection.failed = true;
-            this.DownloadSection.errorMessage = err.toString();
-          }
+          tempFileNames.forEach((fileName) => {
+            try {
+              fs.unwatchFile(path.join(this.Directory, tempFolder, fileName));
+            } catch (err) {}
+          });
+          console.error(err);
+          this.DownloadSection.failed = true;
+          this.DownloadSection.errorMessage = err.toString();
         }).finally(() => {
           this.DownloadSection.progress = 1;
           this.DownloadSection.isFinished = true;
@@ -359,13 +393,19 @@ export default {
     StartVideoStream: function (url, directory, filename, format) {
       return new Promise((resolve, reject) => {
         const youtubedl = path.join(__statics, 'youtube-dl', 'bin', 'youtube-dl.exe');
-        execFile(youtubedl, ['-f', format, '-o', filename, '--no-part', url], {
-          cwd: directory
+        const cp = execFile(youtubedl, ['-f', format, '-o', filename, '--no-part', url], {
+          cwd: directory,
+          maxBuffer: 1024 * 1024 * 10
         },
-        function Done (err, output) {
+        (err, output) => {
+          this.DownloadSection.closeCurrentProcess = () => {};
           if (err) reject(err);
           else resolve(output);
         });
+        this.DownloadSection.closeCurrentProcess = (message) => {
+          terminate(cp.pid);
+          reject(message);
+        };
       });
     },
     DownloadVideoInfo: function (url, args) {
@@ -375,7 +415,9 @@ export default {
 
       return new Promise((resolve, reject) => {
         const youtubedl = path.join(__statics, 'youtube-dl', 'bin', 'youtube-dl.exe');
-        execFile(youtubedl, ['--print-json', '-s', ...args, url], {}, (err, output) => {
+        const cp = execFile(youtubedl, ['--print-json', '-s', ...args, url], {
+          maxBuffer: 1024 * 1024 * 10 }, (err, output) => {
+          this.DownloadSection.closeCurrentProcess = () => {};
           if (err) {
             reject(err);
           } else {
@@ -385,6 +427,10 @@ export default {
             resolve(obj);
           }
         });
+        this.DownloadSection.closeCurrentProcess = (message) => {
+          terminate(cp.pid);
+          reject(message);
+        };
       });
     },
     FormatDuration: function (ms) {
@@ -403,26 +449,38 @@ export default {
     },
     CombineVideoAndAudio: function (directory, video, audio, filename) {
       return new Promise((resolve, reject) => {
-        execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${video}"`, '-i', `"${audio}"`, '-shortest', `"${filename}"`], {
+        const cp = execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${video}"`, '-i', `"${audio}"`, '-shortest', `"${filename}"`], {
           cwd: directory,
-          shell: true
+          shell: true,
+          maxBuffer: 1024 * 1024 * 10
         },
         (err, stdout, stderr) => {
+          this.DownloadSection.closeCurrentProcess = () => {};
           if (err) return reject(err);
           resolve(stdout);
         });
+        this.DownloadSection.closeCurrentProcess = (message) => {
+          terminate(cp.pid);
+          reject(message);
+        };
       });
     },
     ConvertFile: function (directory, input, output) {
       return new Promise((resolve, reject) => {
-        execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${input}"`, `"${output}"`], {
+        const cp = execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${input}"`, `"${output}"`], {
           cwd: directory,
-          shell: true
+          shell: true,
+          maxBuffer: 1024 * 1024 * 10
         },
         (err, stdout, stderr) => {
+          this.DownloadSection.closeCurrentProcess = () => {};
           if (err) return reject(err);
           resolve(stdout);
         });
+        this.DownloadSection.closeCurrentProcess = (message) => {
+          terminate(cp.pid);
+          reject(message);
+        };
       });
     },
     ShowFormatsDialog: function () {
@@ -433,6 +491,7 @@ export default {
       filename = filename.replace('  ', ' ');
       return filename;
     }
+
   },
   data () {
     return {
@@ -477,7 +536,8 @@ export default {
         isFinished: false,
         status: '',
         failed: false,
-        errorMessage: ''
+        errorMessage: '',
+        closeCurrentProcess: function () {}
       }
     };
   }
