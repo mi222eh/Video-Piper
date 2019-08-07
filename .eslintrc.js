@@ -37,6 +37,7 @@ module.exports = {
     'arrow-parens': 'off',
     'one-var': 'off',
 
+    'indent': ['error', 4],
     'import/first': 'off',
     'import/named': 'error',
     'import/namespace': 'error',
