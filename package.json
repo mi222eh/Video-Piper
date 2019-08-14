@@ -7,7 +7,8 @@
   "author": "mi222eh <mi222eh@users.noreply.github.com>",
   "private": true,
   "scripts": {
-    "lint": "eslint --ext .js,.vue src",
+	"lint": "eslint --ext .js,.vue src",
+	"debug":"quasar dev -m electron",
     "test": "echo \"No test specified\" && exit 0"
   },
   "dependencies": {

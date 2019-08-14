@@ -20,7 +20,6 @@
         label="Get Info"
         @click="GetVideoInfo"
       />
-
     </div>
 
     <!--VIDEO INFORMATION CARD-->
@@ -32,16 +31,21 @@
       <q-card-section>
         <!--BASIC INFORMATION-->
         <q-card>
-          <q-card-section v-for="(Info, index) in InfoSection.InfoToDisplay" :key="`${index}-${Info.field}`">
+          <q-card-section
+            v-for="(Info, index) in InfoSection.InfoToDisplay"
+            :key="`${index}-${Info.field}`"
+          >
             <q-item-label>{{Info.label}}</q-item-label>
             <q-item-label caption lines="2">{{InfoSection.data[Info.field]}}</q-item-label>
           </q-card-section>
         </q-card>
         <q-card>
-          <q-item clickable v-ripple @click="ShowFormatsDialog">
+          <q-item clickable v-ripple @click="ShowFormats = true">
             <q-item-section>
               <q-item-label>Format{{ChosenFormat.height ? ` - ${ChosenFormat.height}P` : ''}}</q-item-label>
-              <q-item-label caption>{{ChosenFormat.format}}{{ChosenFormat.filesize ? ' at ' + (Math.round(ChosenFormat.filesize / 1000000)) + 'MB': ''}}</q-item-label>
+              <q-item-label
+                caption
+              >{{ChosenFormat.format}}{{ChosenFormat.filesize ? ' at ' + (Math.round(ChosenFormat.filesize / 1000000)) + 'MB': ''}}</q-item-label>
             </q-item-section>
 
             <q-item-section side top>
@@ -49,7 +53,6 @@
             </q-item-section>
           </q-item>
         </q-card>
-
       </q-card-section>
 
       <!--DOWNLOAD BUTTON-->
@@ -59,10 +62,7 @@
     </q-card>
 
     <!--CHOOSE FORMAT DIALOG-->
-    <q-dialog
-    v-model="ShowFormats"
-    transition-show="scale"
-    transition-hide="scale">
+    <q-dialog v-model="ShowFormats" transition-show="scale" transition-hide="scale">
       <q-card style="width: 300px">
         <q-card-section class="row items-center">
           <div class="text-h6">Formats</div>
@@ -73,23 +73,32 @@
         <q-card-section style="max-height: 50vh" class="scroll">
           <q-list bordered class="rounded-borders">
             <q-expansion-item
-              v-for="(category, index) in InfoSection.formats" :key="`${index}-Category`"
+              v-for="(category, index) in InfoSection.formats"
+              :key="`${index}-Category`"
               expand-separator
               :label="`${category.label}`"
-              caption=""
+              caption
             >
-            <q-list v-for="(format, index) in category.list" :key="`${index}-format`">
-              <q-item clickable v-close-popup v-ripple @click="ChosenFormat = format" :active="ChosenFormat.format_id === format.format_id">
-                <q-item-section>
-                  <q-item-label>Format{{format.height ? ` - ${format.height}P` : ''}}</q-item-label>
-                  <q-item-label caption>{{format.format}}{{format.filesize ? ' at ' + (Math.round(format.filesize / 1000000)) + 'MB': ''}}</q-item-label>
-                </q-item-section>
+              <q-list v-for="(format, index) in category.list" :key="`${index}-format`">
+                <q-item
+                  clickable
+                  v-close-popup
+                  v-ripple
+                  @click="ChosenFormat = format"
+                  :active="ChosenFormat.format_id === format.format_id"
+                >
+                  <q-item-section>
+                    <q-item-label>Format{{format.height ? ` - ${format.height}P` : ''}}</q-item-label>
+                    <q-item-label
+                      caption
+                    >{{format.format}}{{format.filesize ? ' at ' + (Math.round(format.filesize / 1000000)) + 'MB': ''}}</q-item-label>
+                  </q-item-section>
 
-                <q-item-section side top>
-                  <q-item-label caption>{{format.ext}}</q-item-label>
-                </q-item-section>
-              </q-item>
-            </q-list>
+                  <q-item-section side top>
+                    <q-item-label caption>{{format.ext}}</q-item-label>
+                  </q-item-section>
+                </q-item>
+              </q-list>
             </q-expansion-item>
           </q-list>
         </q-card-section>
@@ -110,9 +119,20 @@
         </q-card-section>
         <q-separator />
 
-        <q-linear-progress v-if="DownloadSection.progress === -1" query style="height: 15px" :value="this.DownloadSection.progress" />
+        <q-linear-progress
+          v-if="DownloadSection.progress === -1"
+          query
+          style="height: 15px"
+          :value="this.DownloadSection.progress"
+        />
 
-        <q-linear-progress v-else-if="DownloadSection.progress === 404 " indeterminate stripe style="height: 15px" :value="this.DownloadSection.progress" />
+        <q-linear-progress
+          v-else-if="DownloadSection.progress === 404 "
+          indeterminate
+          stripe
+          style="height: 15px"
+          :value="this.DownloadSection.progress"
+        />
 
         <q-linear-progress v-else stripe style="height: 15px" :value="DownloadSection.progress" />
 
@@ -121,20 +141,16 @@
         <!--STATUS-->
         <q-card-section>
           <div v-if="DownloadSection.isFinished">
-            <div v-if="DownloadSection.failed">
-              Error: {{DownloadSection.errorMessage}}
-            </div>
-            <div v-else style="color:green">
-              Completed
-            </div>
-            </div>
+            <div v-if="DownloadSection.failed">Error: {{DownloadSection.errorMessage}}</div>
+            <div v-else style="color:green">Completed</div>
+          </div>
           <div v-else>{{DownloadSection.status}}</div>
         </q-card-section>
 
         <!--DIALOG CLOSE BUTTON-->
         <q-card-actions align="right" class="bg-white text-teal">
           <q-btn flat v-if="DownloadSection.isFinished" label="OK" v-close-popup />
-          <q-btn flat v-else label="Cancel" @click="DownloadSection.closeCurrentProcess('User cancelled')"/>
+          <q-btn flat v-else label="Cancel" v-close-popup @click="Abort()" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -142,35 +158,92 @@
 </template>
 
 <script>
-import fs from 'fs-extra';
-import path from 'path';
-import { execFile } from 'child_process';
-import terminate from 'terminate';
+import path, { join } from 'path';
 import sanitizeFilename from 'sanitize-filename';
+import { ipcRenderer } from 'electron';
+import fs from 'fs-extra';
 
-const Utils = {
-    ExecuteYoutubeDl: function ({ cwd, url, args, callback }) {
-        const youtubedl = path.join(__statics, 'youtube-dl', 'bin', 'youtube-dl.exe');
-        return execFile(youtubedl, [...args, url], {
-            cwd: cwd,
-            maxBuffer: 1024 * 1024 * 10
-        }, callback
-        );
-    }
+const Factory = {
+	Format: class {
+		height;
+		format;
+		filesize;
+		format_id;
+		ext;
+		constructor({height, format, filesize, format_id, ext}){
+			this.height = height;
+			this.format = format;
+			this.filesize = filesize;
+			this.format_id = format_id;
+			this.ext = ext;
+		}
+	}
+};
+
+const handleFailed = (error) => {
+    console.error(error);
+    this.DownloadSection.progress = 1;
+    this.DownloadSection.failed = true;
+    this.DownloadSection.errorMessage = error.toString();
+    fs.removeSync(tempPath);
+};
+const convert = ({ totalSize }) => {
+    const tempFilename = this.RemoveIllegalFilenameCharacters(getLast(tempFileNames) + '.' + chosenExt);
+    this.TrackProgress({ filePath: path.join(tempPath, tempFilename), totalSize });
+    return new Promise((resolve, reject) => {
+        this.ConvertFile({
+            cwd: tempPath,
+            input: getLast(tempFileNames),
+            output: tempFilename
+        })
+            .then((result) => {
+                tempFileNames.push(tempFilename);
+                resolve(result);
+            })
+            .catch(reject);
+    });
+};
+const combine = ({ totalSize }) => {
+    const tempFilename = this.RemoveIllegalFilenameCharacters(tempFileNames.reduce((acc, curr) => acc + curr, '') + '.' + chosenExt);
+    this.TrackProgress({ filePath: path.join(tempPath, tempFilename), totalSize });
+    return new Promise((resolve, reject) => {
+        this.CombineVideoAndAudio({
+            cwd: tempPath,
+            inputs: tempFileNames,
+            output: tempFilename
+        })
+            .then((result) => {
+                tempFileNames.push(tempFilename);
+                resolve(result);
+            })
+            .catch(reject);
+    });
+};
+const downloadPart = (info) => {
+    const tempFilename = this.RemoveIllegalFilenameCharacters(`${info.id}-${info.format_id}.${info.ext}`);
+    tempFileNames.push(tempFilename);
+    this.TrackProgress({ filePath: path.join(tempPath, tempFilename), totalSize: info.filesize || null });
+
+    return this.StartVideoStream({
+        url: url,
+        cwd: tempPath,
+        filename: tempFilename,
+        format: info.format_id
+    });
 };
 
 export default {
     name: 'PageIndex',
     created () {},
     methods: {
-        ChooseDirectory: function () {
+        ChooseDirectory: async function () {
             this.Directory = this.$q.electron.remote.dialog.showOpenDialog({
                 properties: ['openDirectory']
             })[0];
         },
-        GetVideoInfo: function (isSecondTry) {
+        GetVideoInfo: function () {
             if (!this.VideoUrl) {
-                this.$q.notify('Please input the video url');
+                this.$q.notify('Input the video url');
                 return;
             }
             // Set variables
@@ -178,112 +251,107 @@ export default {
             this.IsGettingVideoInformation = true;
             this.InfoSection.Show = false;
 
-            let args = [];
-            if (!isSecondTry) {
-                args = ['-f', 'bestvideo+bestaudio'];
+            let format = 'bestvideo+bestaudio';
+
+            let info = await this.DownloadVideoInfo({ url: this.CurrentVideoUrl, format: isSecondTry ? '' : 'bestvideo+bestaudio', cwd: this.Directory });
+            let info = JSON.parse(result);
+            // Set variables
+            this.IsGettingVideoInformation = false;
+            this.InfoSection.data = info;
+            this.InfoSection.formats.audio.list = [];
+            this.InfoSection.formats.video.list = [];
+            this.InfoSection.formats.audioAndVideo.list = [];
+            this.InfoSection.formats.custom.list = [];
+
+            // Split format id
+            const formatIds = info.format_id.split('+');
+            if (formatIds.length > 1) {
+                const bestVideo = info.formats.find(format => formatIds.some(formatId => formatId === format.format_id) && format.vcodec !== 'none');
+                const bestAudio = info.formats.find(format => formatIds.some(formatId => formatId === format.format_id) && format.acodec !== 'none');
+
+                const audioOnly = info.formats.filter(format => format.vcodec === 'none');
+                const videoOnly = info.formats.filter(format => format.acodec === 'none');
+                const audioAndVideo = info.formats.filter(format => format.vcodec !== 'none' && format.acodec !== 'none');
+
+                const best1080pVideo = info.formats.filter(format => format.width === 1920).reduce((accumulator, currentValue, currentIndex, array) => {
+                    console.log({ accumulator, currentValue });
+                    if (accumulator === false) {
+                        return currentValue;
+                    }
+                    if (currentValue.filesize > accumulator.filesize) {
+                        return currentValue;
+                    }
+                    return accumulator;
+                }, false);
+
+                const bestAudioAndVideoPreset = {
+                    abr: bestAudio.abr,
+                    acodec: bestAudio.acodec,
+                    ext: 'mp4',
+                    filesize: bestAudio.filesize + bestVideo.filesize,
+                    format: 'Best video and audio',
+                    format_id: info.format_id,
+                    format_note: 'Best video and audio',
+                    quality: -1,
+                    height: bestVideo.height,
+                    vcodec: bestVideo.vcodec
+                };
+                let best1080VideoPreset = {};
+                const bestAudioPreset = {
+                    abr: bestAudio.abr,
+                    acodec: bestAudio.acodec,
+                    ext: 'mp3',
+                    filesize: bestAudio.filesize,
+                    format: 'Best audio',
+                    format_id: bestAudio.format_id,
+                    format_note: 'Best audio only',
+                    quality: -1
+                };
+                const bestVideoPreset = {
+                    ext: 'mp4',
+                    filesize: bestVideo.filesize,
+                    format: 'Best video',
+                    format_id: bestVideo.format_id,
+                    format_note: 'Best video only',
+                    quality: -1,
+                    height: bestVideo.height,
+                    vcodec: bestVideo.vcodec
+                };
+                if (best1080pVideo) {
+                    best1080VideoPreset = {
+                        abr: bestAudio.abr,
+                        ext: 'mp4',
+                        filesize: best1080pVideo.filesize + bestAudio.filesize,
+                        format: 'Best 1080P video and audio',
+                        format_id: best1080pVideo.format_id + '+' + bestAudio.format_id,
+                        format_note: 'Best 1080P video and audio',
+                        quality: -1,
+                        height: best1080pVideo.height,
+                        vcodec: best1080pVideo.vcodec
+                    };
+                }
+
+                this.InfoSection.formats.audio.list = audioOnly;
+                this.InfoSection.formats.video.list = videoOnly;
+                this.InfoSection.formats.audioAndVideo.list = audioAndVideo;
+
+                this.InfoSection.formats.custom.list.push(bestAudioAndVideoPreset);
+                if (best1080pVideo) {
+                    this.InfoSection.formats.custom.list.push(best1080VideoPreset);
+                }
+                this.InfoSection.formats.custom.list.push(bestAudioPreset);
+                this.InfoSection.formats.custom.list.push(bestVideoPreset);
+
+                info.formats.unshift(bestAudioAndVideoPreset);
             }
-            // Begin downloading the video information with the default being bestvideo+bestaudio
-            this.DownloadVideoInfo(this.CurrentVideoUrl, args).then((info) => {
-                // Set variables
+            this.ChosenFormat = info.formats.find(format => format.format_id === info.format_id);
+            this.InfoSection.Show = true;
+            if (isSecondTry) {
+                this.$q.notify('Error getting video information');
                 this.IsGettingVideoInformation = false;
-                this.InfoSection.data = info;
-                this.InfoSection.formats.audio.list = [];
-                this.InfoSection.formats.video.list = [];
-                this.InfoSection.formats.audioAndVideo.list = [];
-                this.InfoSection.formats.custom.list = [];
-
-                // Split format id
-                const formatIds = info.format_id.split('+');
-                if (formatIds.length > 1) {
-                    const bestVideo = info.formats.find(format => formatIds.some(formatId => formatId === format.format_id) && format.vcodec !== 'none');
-                    const bestAudio = info.formats.find(format => formatIds.some(formatId => formatId === format.format_id) && format.acodec !== 'none');
-
-                    const audioOnly = info.formats.filter(format => format.vcodec === 'none');
-                    const videoOnly = info.formats.filter(format => format.acodec === 'none');
-                    const audioAndVideo = info.formats.filter(format => format.vcodec !== 'none' && format.acodec !== 'none');
-
-                    const best1080pVideo = info.formats.filter(format => format.width === 1920).reduce((accumulator, currentValue, currentIndex, array) => {
-                        console.log('acc: ', accumulator);
-                        console.log('acurr: ', currentValue);
-                        if (accumulator === false) {
-                            return currentValue;
-                        }
-                        if (currentValue.filesize > accumulator.filesize) {
-                            return currentValue;
-                        }
-                        return accumulator;
-                    }, false);
-
-                    const bestAudioAndVideoPreset = {
-                        abr: bestAudio.abr,
-                        acodec: bestAudio.acodec,
-                        ext: 'mp4',
-                        filesize: bestAudio.filesize + bestVideo.filesize,
-                        format: 'Best video and audio',
-                        format_id: info.format_id,
-                        format_note: 'Best video and audio',
-                        quality: -1,
-                        height: bestVideo.height,
-                        vcodec: bestVideo.vcodec
-                    };
-                    let best1080VideoPreset = {};
-                    const bestAudioPreset = {
-                        abr: bestAudio.abr,
-                        acodec: bestAudio.acodec,
-                        ext: 'mp3',
-                        filesize: bestAudio.filesize,
-                        format: 'Best audio',
-                        format_id: bestAudio.format_id,
-                        format_note: 'Best audio only',
-                        quality: -1
-                    };
-                    const bestVideoPreset = {
-                        ext: 'mp4',
-                        filesize: bestVideo.filesize,
-                        format: 'Best video',
-                        format_id: bestVideo.format_id,
-                        format_note: 'Best video only',
-                        quality: -1,
-                        height: bestVideo.height,
-                        vcodec: bestVideo.vcodec
-                    };
-                    if (best1080pVideo) {
-                        best1080VideoPreset = {
-                            abr: bestAudio.abr,
-                            ext: 'mp4',
-                            filesize: best1080pVideo.filesize + bestAudio.filesize,
-                            format: 'Best 1080P video and audio',
-                            format_id: best1080pVideo.format_id + '+' + bestAudio.format_id,
-                            format_note: 'Best 1080P video and audio',
-                            quality: -1,
-                            height: best1080pVideo.height,
-                            vcodec: best1080pVideo.vcodec
-                        };
-                    }
-
-                    this.InfoSection.formats.audio.list = audioOnly;
-                    this.InfoSection.formats.video.list = videoOnly;
-                    this.InfoSection.formats.audioAndVideo.list = audioAndVideo;
-
-                    this.InfoSection.formats.custom.list.push(bestAudioAndVideoPreset);
-                    if (best1080pVideo) {
-                        this.InfoSection.formats.custom.list.push(best1080VideoPreset);
-                    }
-                    this.InfoSection.formats.custom.list.push(bestAudioPreset);
-                    this.InfoSection.formats.custom.list.push(bestVideoPreset);
-
-                    info.formats.unshift(bestAudioAndVideoPreset);
-                }
-                this.ChosenFormat = info.formats.find(format => format.format_id === info.format_id);
-                this.InfoSection.Show = true;
-            }).catch((err) => {
-                if (isSecondTry) {
-                    this.$q.notify('Error getting video information');
-                    this.IsGettingVideoInformation = false;
-                    return console.error(err);
-                }
-                this.DownloadVideoInfo(true);
-            });
+                return console.error(err);
+            }
+            this.DownloadVideoInfo(true);
         },
         DownloadVideo: function () {
             if (!this.Directory) {
@@ -296,177 +364,124 @@ export default {
             }
 
             this.ShowDownloadDialog = true;
+            this.DownloadSection.status = 'Preparing';
             this.DownloadSection.isFinished = false;
             this.DownloadSection.progress = 0;
             this.DownloadSection.failed = false;
 
-            const formatIds = this.ChosenFormat.format_id.split('+');
-            const isSplit = formatIds.length > 1;
+            const chosenExt = this.ChosenFormat.ext;
+            const url = this.CurrentVideoUrl;
+            const directory = this.Directory;
             const tempFolder = this.InfoSection.data.id;
+            const tempPath = join(directory, tempFolder);
             const filename = this.RemoveIllegalFilenameCharacters(`${this.InfoSection.data.fulltitle}${this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''}.${this.ChosenFormat.ext}`);
 
+            let formatIds = this.ChosenFormat.format_id.split('+');
             let tempFileNames = [];
             let infos = [];
+            let totalSize = 0;
 
-            const getLatestFileName = () => tempFileNames[tempFileNames.length - 1];
+            const getLast = (arr) => arr[arr.length - 1];
 
             fs.mkdirp(path.join(this.Directory, tempFolder));
 
-            this.DownloadSection.progress = -1;
-            this.DownloadSection.status = 'Preparing';
-
-            const downloadPart = (formatId) => {
-                return new Promise((downloadResolve, downloadReject) => {
-
-                });
-            };
-
-            const downloadParts = () => {
-                if (formatIds.length > 0) {
-                    downloadPart(formatIds.pop()).then(downloadParts).catch(err => console.error(err));
+            // Main Engine
+            const nextStep = () => {
+                // Unwatch latest addition
+                if (tempFileNames.length > 0) {
+                    fs.unwatchFile(path.join(tempPath, getLast(tempFileNames)));
                 }
+
+                if (formatIds.length > 0) {
+                    this.DownloadSection.progress = -1;
+                    this.DownloadSection.status = 'Downloading info...';
+                    this.DownloadVideoInfo({ url, format: formatIds.pop(), cwd: tempPath })
+                        .then(({ result }) => {
+                            console.log({ result });
+
+                            infos.push(JSON.parse(result));
+                            totalSize = infos.reduce((acc, curr) => acc + curr.filesize, 0);
+                            nextStep();
+                        })
+                        .catch(handleFailed);
+                    return;
+                }
+
+                if (infos.length > 0) {
+                    console.log({ infos });
+                    let info = infos.pop();
+                    this.DownloadSection.status = `Downloading ${info.ext} file...`;
+
+                    downloadPart(info).then(nextStep).catch(handleFailed);
+                    return;
+                }
+
+                if (tempFileNames.length > 1) {
+                    this.DownloadSection.status = `Combining media to ${chosenExt}...`;
+                    console.log({ totalSize });
+
+                    combine({
+                        totalSize: totalSize
+                    }).then(() => {
+                        tempFileNames = [getLast(tempFileNames)];
+                        nextStep();
+                    }).catch(handleFailed);
+                    return;
+                }
+
+                if (chosenExt !== path.extname(getLast(tempFileNames))) {
+                    this.DownloadSection.status = `Converting media to ${chosenExt}...`;
+                    console.log({ totalSize });
+                    convert({
+                        totalSize: totalSize
+                    }).then(nextStep).catch(handleFailed);
+                    return;
+                }
+
+                const changeFrom = tempFileNames.pop();
+                fs.moveSync(path.join(tempPath, changeFrom), path.join(this.Directory, filename), { overwrite: true });
+                fs.removeSync(tempPath);
+
+                // Finished
+                this.DownloadSection.progress = 1;
+                this.DownloadSection.isFinished = true;
             };
 
-            // Download information
-            this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[0]])
-                .then((info) => {
-                    console.log('download info:', info);
-                    infos[0] = info;
-                    tempFileNames[0] = `${info.id}-${info.format_id}.${info.ext}`;
-
-                    this.DownloadSection.status = 'Downloading';
-                    fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[0]), {
-                        interval: 200
-                    }, (current, previous) => {
-                        if (info.filesize) {
-                            this.DownloadSection.progress = current.size / info.filesize;
-                            return;
-                        }
-                        this.DownloadSection.progress = 404;
-                    });
-
-                    // Stream into file
-                    return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[0], info.format_id);
-                })
-                .then(() => {
-                    fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[0]));
-                    if (!isSplit) return;
-                    this.DownloadSection.progress = 0;
-                    this.DownloadSection.status = 'Getting second part information';
-                    this.DownloadSection.progress = -1;
-
-                    // Getting information for the second part
-                    return this.DownloadVideoInfo(this.CurrentVideoUrl, ['-f', formatIds[1]]);
-                }).then((info) => {
-                    if (!isSplit) return;
-                    console.log('Second info:', info);
-                    infos[1] = info;
-
-                    tempFileNames[1] = `${info.id}-${info.format_id}.${info.ext}`;
-                    this.DownloadSection.status = 'Downloading second part';
-                    fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[1]), {
-                        interval: 200
-                    }, (current, previous) => {
-                        if (info.filesize) {
-                            this.DownloadSection.progress = current.size / info.filesize;
-                            return;
-                        }
-                        this.DownloadSection.progress = current.size / info.filesize;
-                    });
-
-                    // Stream into file
-                    return this.StartVideoStream(this.CurrentVideoUrl, path.join(this.Directory, tempFolder), tempFileNames[1], info.format_id);
-                }).then(async (result) => {
-                    this.DownloadSection.progress = 0;
-                    if (isSplit) {
-                        this.DownloadSection.status = 'Combining parts to ' + this.ChosenFormat.ext;
-                        fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[1]));
-                        tempFileNames[2] = `${infos[0].id}-${infos[0].format_id}-${infos[1].format_id}.${this.ChosenFormat.ext}`;
-                        await fs.remove(path.join(this.Directory, tempFolder, tempFileNames[2]));
-                        fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[2]), {
-                            interval: 200
-                        }, (current, previous) => {
-                            this.DownloadSection.progress = current.size / (infos[0].filesize + infos[1].filesize);
-                        });
-                        return this.CombineVideoAndAudio(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1], tempFileNames[2]);
-                    } else {
-                        if (infos[0].ext !== this.ChosenFormat.ext) {
-                            this.DownloadSection.status = 'Converting to ' + this.ChosenFormat.ext;
-                            tempFileNames[1] = `${infos[0].id}-${infos[0].format_id}.${this.ChosenFormat.ext}`;
-                            await fs.remove(path.join(this.Directory, tempFolder, tempFileNames[1]));
-                            fs.watchFile(path.join(this.Directory, tempFolder, tempFileNames[1]), {
-                                interval: 200
-                            }, (current, previous) => {
-                                this.DownloadSection.progress = current.size / infos[0].filesize;
-                            });
-                            return this.ConvertFile(path.join(this.Directory, tempFolder), tempFileNames[0], tempFileNames[1]);
-                        }
-                    }
-                }).then(() => {
-                    fs.unwatchFile(path.join(this.Directory, tempFolder, tempFileNames[tempFileNames.length - 1]));
-                    const changeFrom = tempFileNames.pop();
-                    return fs.move(path.join(this.Directory, tempFolder, changeFrom), path.join(this.Directory, filename));
-                }).then(() => {
-                    return fs.remove(path.join(this.Directory, tempFolder));
-                }).catch((err) => {
-                    tempFileNames.forEach((fileName) => {
-                        try {
-                            fs.unwatchFile(path.join(this.Directory, tempFolder, fileName));
-                        } catch (err) {}
-                    });
-                    console.error(err);
-                    this.DownloadSection.failed = true;
-                    this.DownloadSection.errorMessage = err.toString();
-                }).finally(() => {
-                    this.DownloadSection.progress = 1;
-                    this.DownloadSection.isFinished = true;
-                });
+            nextStep();
         },
-        StartVideoStream: function ({ url, directory, filename, format }) {
+        StartVideoStream: function ({ url, cwd, filename, format }) {
             return new Promise((resolve, reject) => {
-                const cp = Utils.ExecuteYoutubeDl({
-                    cwd: this.Directory,
-                    url: this.CurrentVideoUrl,
-                    args: ['-f', format, '-o', filename, '--no-part'],
-                    callback: (err, out) => {
-                        this.DownloadSection.closeCurrentProcess = () => {};
-                        if (err) {
-                            return reject(err);
-                        }
-                        resolve(out);
+                ipcRenderer.once('client/youtubedl/start_video_stream', (event, args) => {
+                    const { error, result } = args;
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve({ result, args: { url, cwd, filename, format } });
                     }
                 });
-                this.DownloadSection.closeCurrentProcess = (message) => {
-                    terminate(cp.pid);
-                    reject(message);
-                };
+                ipcRenderer.send('youtubedl/start_video_stream', {
+                    cwd,
+                    url,
+                    filename,
+                    format
+                });
             });
         },
-        DownloadVideoInfo: function ({ url, args }) {
-            if (typeof args !== 'object') {
-                args = [];
-            }
-
+        DownloadVideoInfo: function ({ url, format, cwd }) {
             return new Promise((resolve, reject) => {
-                const cp = Utils.ExecuteYoutubeDl({
-                    url: url,
-                    args: ['--print-json', '-s', ...args],
-                    callback: (err, out) => {
-                        this.DownloadSection.closeCurrentProcess = () => {};
-                        if (err) {
-                            reject(err);
-                        } else {
-                            const obj = JSON.parse(out);
-                            obj.duration_formatted = this.FormatDuration(obj.duration * 1000);
-                            console.log('Info: ', obj);
-                            resolve(obj);
-                        }
+                ipcRenderer.once('client/youtubedl/get_info', (event, args) => {
+                    const { error, result } = args;
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve({ result, args: { url, format, cwd } });
                     }
                 });
-                this.DownloadSection.closeCurrentProcess = (message) => {
-                    terminate(cp.pid);
-                    reject(message);
-                };
+                ipcRenderer.send('youtubedl/get_info', {
+                    cwd,
+                    url,
+                    format
+                });
             });
         },
         FormatDuration: function (ms) {
@@ -483,49 +498,58 @@ export default {
                 .map(([key, val]) => `${val} ${key}${val !== 1 ? 's' : ''}`)
                 .join(', ');
         },
-        CombineVideoAndAudio: function (directory, video, audio, filename) {
+        CombineVideoAndAudio: function ({ cwd, inputs = [], output }) {
             return new Promise((resolve, reject) => {
-                const cp = execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${video}"`, '-i', `"${audio}"`, '-shortest', `"${filename}"`], {
-                    cwd: directory,
-                    shell: true,
-                    maxBuffer: 1024 * 1024 * 10
-                },
-                (err, stdout, stderr) => {
-                    this.DownloadSection.closeCurrentProcess = () => {};
-                    if (err) return reject(err);
-                    resolve(stdout);
+                ipcRenderer.once('client/ffmpeg/combine', (event, args) => {
+                    const { error, result } = args;
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve({ result, args: { cwd, inputs, output } });
+                    }
                 });
-                this.DownloadSection.closeCurrentProcess = (message) => {
-                    terminate(cp.pid);
-                    reject(message);
-                };
+                ipcRenderer.send('ffmpeg/combine', {
+                    cwd,
+                    inputs,
+                    output
+                });
             });
         },
-        ConvertFile: function (directory, input, output) {
+        ConvertFile: function ({ cwd, input, output }) {
             return new Promise((resolve, reject) => {
-                const cp = execFile(path.join(__statics, 'ffmpeg', 'ffmpeg.exe'), ['-i', `"${input}"`, `"${output}"`], {
-                    cwd: directory,
-                    shell: true,
-                    maxBuffer: 1024 * 1024 * 10
-                },
-                (err, stdout, stderr) => {
-                    this.DownloadSection.closeCurrentProcess = () => {};
-                    if (err) return reject(err);
-                    resolve(stdout);
+                ipcRenderer.once('client/ffmpeg/convert', (event, args) => {
+                    const { error, result } = args;
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve({ result, args: { cwd, input, output } });
+                    }
                 });
-                this.DownloadSection.closeCurrentProcess = (message) => {
-                    terminate(cp.pid);
-                    reject(message);
-                };
+                ipcRenderer.send('ffmpeg/convert', {
+                    cwd,
+                    input,
+                    output
+                });
             });
-        },
-        ShowFormatsDialog: function () {
-            this.ShowFormats = true;
         },
         RemoveIllegalFilenameCharacters: function (filename) {
             filename = sanitizeFilename(filename);
             filename = filename.replace('  ', ' ');
             return filename;
+        },
+        TrackProgress: function ({ filePath, totalSize }) {
+            fs.watchFile(filePath, {
+                interval: 200
+            }, (current, previous) => {
+                if (typeof totalSize === 'number') {
+                    this.DownloadSection.progress = current.size / totalSize;
+                    return;
+                }
+                this.DownloadSection.progress = 404;
+            });
+        },
+        Abort () {
+            ipcRenderer.send('abort');
         }
 
     },
@@ -572,8 +596,7 @@ export default {
                 isFinished: false,
                 status: '',
                 failed: false,
-                errorMessage: '',
-                closeCurrentProcess: function () {}
+                errorMessage: ''
             }
         };
     }
@@ -581,12 +604,12 @@ export default {
 </script>
 
 <style>
-  .video-thumbnail{
-    max-width: 500px;
-    display: block;
-    margin: 0 auto;
-  }
-  .directory{
-    display: inline;
-  }
+.video-thumbnail {
+  max-width: 500px;
+  display: block;
+  margin: 0 auto;
+}
+.directory {
+  display: inline;
+}
 </style>

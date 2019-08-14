@@ -1,32 +1,33 @@
 import { execFile } from 'child_process';
-import fs from 'fs-extra';
 import terminate from 'terminate';
 import { join } from 'path';
 
 const youtubedl = join(__statics, 'bin', 'youtube-dl.exe');
 
-let cancel = ({message}) => {
+let cancel = ({ message }) => {
 
 };
 
 function execute ({ cwd, url, args }) {
+	console.log({ cwd, url, args });
+
     return new Promise((resolve, reject) => {
         const cp = execFile(youtubedl, [...args, url], {
             cwd: cwd,
             maxBuffer: 1024 * 1024 * 10
         }, (err, out) => {
-			cancel = ()=> {};
+            cancel = () => {};
             if (err) {
                 reject(err);
             } else {
                 resolve(out);
             }
         }
-		);
-		cancel = ({message}) => {
-			terminate(cp.pid);
-			reject(message);
-		}
+        );
+        cancel = ({ message }) => {
+            terminate(cp.pid);
+            reject(message);
+        };
     });
 }
 
@@ -68,18 +69,18 @@ function streamVideoIntoFile ({ cwd, url, filename, format }) {
     if (format) {
         args = [...args, '-f', format];
     }
-	args = [...args, '-o', filename, '--no-part'];
-	return execute(cwd, url, args);
+    args = [...args, '-o', filename, '--no-part'];
+    return execute({cwd, url, args});
 }
 
 function abort () {
-	cancel({
-		message: 'Cancelled'
-	});
+    cancel({
+        message: 'Cancelled'
+    });
 }
 
-module.exports = {
+export default {
     getInfo,
-	abort,
-	streamVideoIntoFile
+    abort,
+    streamVideoIntoFile
 };
