@@ -4,16 +4,17 @@ import path from 'path';
 
 const ffmpeg = path.join(__statics, 'bin', 'ffmpeg.exe');
 
-let cancel = () => {};
+let cancel = () => Promise.resolve();
 
 function execute ({ cwd, args }) {
 	console.log({ cwd, args });
     return new Promise((resolve, reject) => {
         const cp = execFile(ffmpeg, [...args], {
             cwd: cwd,
-            shell: true,
-            maxBuffer: 1024 * 1024 * 10
+            shell: false,
+			maxBuffer: 1024 * 1024 * 10
         }, (err, out) => {
+			cancel = () => Promise.resolve();
 			console.log({ err, out });
             if (err) {
                 reject(err);
@@ -22,8 +23,11 @@ function execute ({ cwd, args }) {
             }
         });
         cancel = ({ message }) => {
-            terminate(cp.pid);
-            reject(message);
+			return new Promise((rResolve, rReject) => {
+				terminate(cp.pid, rResolve);
+				reject(message);
+			});
+
         };
     });
 }
@@ -39,7 +43,7 @@ function combine ({ inputs = [], output = '', cwd = '' }) {
         return Promise.reject('cwd required');
     }
     const [input1, input2] = inputs;
-    let args = ['-i', input1, '-i', input2, '-shortest', `"${output}"`];
+    let args = ['-i', input1, '-i', input2, '-shortest', `${output}`];
     return execute({ cwd, args });
 }
 
@@ -52,13 +56,24 @@ function convert ({ input = '', output = '', cwd = '' }) {
     }
     if (typeof cwd !== 'string') {
         return Promise.reject('cwd required');
-    }
-    let args = ['-i', input, `"${output}"`];
+	}
+	let convertArgs = [];
+	switch (path.extname(output)) {
+		case "mp3":
+			convertArgs = ['-vn', '-ab', '256']
+			break;
+		case "mp4":
+			convertArgs = ['-c:v', 'libx264'];
+			break;
+		default:
+			break;
+	}
+    let args = ['-i', input, ...convertArgs, `${output}`];
     return execute({ cwd, args });
 }
 
 function abort () {
-    cancel({
+    return cancel({
         message: 'Cancelled'
     });
 }

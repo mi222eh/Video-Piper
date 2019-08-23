@@ -4,9 +4,7 @@ import { join } from 'path';
 
 const youtubedl = join(__statics, 'bin', 'youtube-dl.exe');
 
-let cancel = ({ message }) => {
-
-};
+let cancel = () => Promise.resolve();
 
 function execute ({ cwd, url, args }) {
 	console.log({ cwd, url, args });
@@ -16,7 +14,7 @@ function execute ({ cwd, url, args }) {
             cwd: cwd,
             maxBuffer: 1024 * 1024 * 10
         }, (err, out) => {
-            cancel = () => {};
+            cancel = () => Promise.resolve();
             if (err) {
                 reject(err);
             } else {
@@ -25,8 +23,11 @@ function execute ({ cwd, url, args }) {
         }
         );
         cancel = ({ message }) => {
-            terminate(cp.pid);
-            reject(message);
+			return new Promise((rResolve, rReject) => {
+				terminate(cp.pid, () => {
+					reject(message);
+				});
+			});
         };
     });
 }
@@ -74,7 +75,7 @@ function streamVideoIntoFile ({ cwd, url, filename, format }) {
 }
 
 function abort () {
-    cancel({
+    return cancel({
         message: 'Cancelled'
     });
 }

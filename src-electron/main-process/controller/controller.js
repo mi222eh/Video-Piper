@@ -3,8 +3,13 @@ import youtubedl from './youtubedl/youtubedl';
 import { ipcMain } from 'electron';
 
 ipcMain.on('abort', (event, args) => {
-    ffmpeg.abort();
-    youtubedl.abort();
+	ffmpeg.abort()
+	.then(() => {
+		return youtubedl.abort();
+	})
+	.then(() => {
+		event.reply('client/abort');
+	});
 });
 
 ipcMain.on('ffmpeg/combine', (event, args) => {
