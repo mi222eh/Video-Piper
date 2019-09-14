@@ -2,14 +2,14 @@ import { execFile } from 'child_process';
 import terminate from 'terminate';
 import path from 'path';
 
-const ffmpeg = path.join(__statics, 'bin', 'ffmpeg.exe');
+const getFFMPEGPath = () => path.join(__statics, 'bin', 'ffmpeg.exe');
 
 let cancel = () => Promise.resolve();
 
 function execute ({ cwd, args }) {
 	console.log({ cwd, args });
     return new Promise((resolve, reject) => {
-        const cp = execFile(ffmpeg, [...args], {
+        const cp = execFile(getFFMPEGPath(), [...args], {
             cwd: cwd,
             shell: false,
 			maxBuffer: 1024 * 1024 * 10

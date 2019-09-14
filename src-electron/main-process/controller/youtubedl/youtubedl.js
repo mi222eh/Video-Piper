@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import terminate from 'terminate';
 import { join } from 'path';
 
-const youtubedl = join(__statics, 'bin', 'youtube-dl.exe');
+const getYoutubeDlPath = () => join(__statics, 'bin', 'youtube-dl.exe');
 
 let cancel = () => Promise.resolve();
 
@@ -10,7 +10,7 @@ function execute ({ cwd, url, args }) {
 	console.log({ cwd, url, args });
 
     return new Promise((resolve, reject) => {
-        const cp = execFile(youtubedl, [...args, url], {
+        const cp = execFile(getYoutubeDlPath(), [...args, url], {
             cwd: cwd,
             maxBuffer: 1024 * 1024 * 10
         }, (err, out) => {
