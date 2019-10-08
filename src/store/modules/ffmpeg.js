@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import terminate from 'terminate';
 import path from 'path';
 
-const getFFMPEGPath = () => path.join(__statics, 'bin', 'ffmpeg.exe');
+const getPath = () => path.join(__statics, 'bin', 'ffmpeg.exe');
 
 let cancel = () => Promise.resolve();
 
@@ -10,7 +10,7 @@ function execute ({ cwd, args }) {
     console.log({ cwd, args });
     return new Promise((resolve, reject) => {
         const cp = execFile(
-            getFFMPEGPath(),
+            getPath(),
             [ ...args ],
             {
                 cwd: cwd,
@@ -28,8 +28,8 @@ function execute ({ cwd, args }) {
             }
         );
         cancel = ({ message }) => {
-            return new Promise((rResolve, rReject) => {
-                terminate(cp.pid, rResolve);
+            return new Promise((resolve) => {
+                terminate(cp.pid, resolve);
                 reject(message);
             });
         };

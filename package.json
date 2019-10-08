@@ -13,15 +13,13 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.0.0",
-    "avconv": "^3.1.0",
     "axios": "^0.18.1",
     "command-exists": "^1.2.8",
-    "ffmpeg-static": "^2.5.0",
     "fs-extra": "^8.1.0",
+    "moment": "^2.24.0",
     "quasar": "^1.0.0",
     "sanitize-filename": "^1.6.1",
-    "terminate": "^2.1.2",
-    "ytdl-core": "^0.29.3"
+    "terminate": "^2.1.2"
   },
   "devDependencies": {
     "@quasar/app": "^1.0.0",
@@ -37,7 +35,8 @@
     "eslint": "^5.10.0",
     "eslint-config-standard": "^13.0.1",
     "eslint-loader": "^2.1.1",
-    "eslint-plugin-vue": "^5.2.3"
+    "eslint-plugin-vue": "^5.2.3",
+    "jsdoc": "^3.6.3"
   },
   "engines": {
     "node": ">= 8.9.0",

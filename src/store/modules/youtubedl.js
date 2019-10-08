@@ -2,8 +2,11 @@ import { execFile } from 'child_process';
 import terminate from 'terminate';
 import { join } from 'path';
 
-const getYoutubeDlPath = () => join(__statics, 'bin', 'youtube-dl.exe');
+const getPath = () => join(__statics, 'bin', 'youtube-dl.exe');
 
+/**
+ * @returns {Promise}
+ */
 let cancel = () => Promise.resolve();
 
 function execute ({ cwd, url, args }) {
@@ -11,7 +14,7 @@ function execute ({ cwd, url, args }) {
 
     return new Promise((resolve, reject) => {
         const cp = execFile(
-            getYoutubeDlPath(),
+            getPath(),
             [ ...args, url ],
             {
                 cwd: cwd,
@@ -30,9 +33,8 @@ function execute ({ cwd, url, args }) {
         );
         cancel = ({ message }) => {
             return new Promise((resolve) => {
-                terminate(cp.pid, () => {
-                    reject(message);
-                });
+                terminate(cp.pid, resolve);
+                reject(message);
             });
         };
     });

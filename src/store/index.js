@@ -1,25 +1,26 @@
 import Vue from 'vue';
 import Vuex from 'vuex';
-
-// import example from './module-example'
-
-Vue.use(Vuex);
-
-/*
- * If not building with SSR mode, you can
- * directly export the Store instantiation
+/**
+ * @callback mutations
+ * @param {String} type
+ *
  */
 
-export default function (/* { ssrContext } */) {
+/**
+ * @typedef {{state:(Object | Function), mutations:Function}} VuexContext
+ * @property {(Object | Function)} state
+ * @property {Function}
+ */
+import mediamanager from './Mediamanager';
+
+Vue.use(Vuex);
+export default function () {
     const Store = new Vuex.Store({
         modules: {
-            // example
+            mediamanager
         },
-
-        // enable strict mode (adds overhead!)
-        // for dev mode only
         strict: process.env.DEV
     });
-
+    Store.dispatch('mediamanager/init');
     return Store;
 }
