@@ -1,8 +1,6 @@
-/**
- * @typedef {}
- */
-
 export default {
+    videoQueue: [],
     isGettingVideoInformation: false,
-    video: {}
+    video: null,
+    isWorking: false
 };

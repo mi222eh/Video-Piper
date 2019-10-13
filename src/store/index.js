@@ -6,11 +6,6 @@ import Vuex from 'vuex';
  *
  */
 
-/**
- * @typedef {{state:(Object | Function), mutations:Function}} VuexContext
- * @property {(Object | Function)} state
- * @property {Function}
- */
 import mediamanager from './Mediamanager';
 
 Vue.use(Vuex);
@@ -21,6 +16,6 @@ export default function () {
         },
         strict: process.env.DEV
     });
-    Store.dispatch('mediamanager/init');
+    // Store.dispatch('mediamanager/init');
     return Store;
 }
