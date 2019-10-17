@@ -23,9 +23,5 @@ export default {
 <style>
 body {
   overflow: auto;
-  background:
-  linear-gradient(45deg,rgb(9, 10, 58), transparent),
-  repeating-linear-gradient(45deg, rgb(21, 102, 194) 0%, rgb(99, 147, 201) 5%, transparent 5%, transparent 10%),
-  rgb(0, 247, 255);
 }
 </style>
