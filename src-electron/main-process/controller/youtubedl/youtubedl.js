@@ -7,27 +7,33 @@ const getYoutubeDlPath = () => join(__statics, 'bin', 'youtube-dl.exe');
 let cancel = () => Promise.resolve();
 
 function execute ({ cwd, url, args }) {
-	console.log({ cwd, url, args });
+    console.log({ cwd, url, args });
 
     return new Promise((resolve, reject) => {
-        const cp = execFile(getYoutubeDlPath(), [...args, url], {
-            cwd: cwd,
-            maxBuffer: 1024 * 1024 * 10
-        }, (err, out) => {
-            cancel = () => Promise.resolve();
-            if (err) {
-                reject(err);
-            } else {
-                resolve(out);
+        const cp = execFile(
+            getYoutubeDlPath(),
+            [ ...args, url ],
+            {
+                cwd: cwd,
+                maxBuffer: 1024 * 1024 * 10
+            },
+            (err, out) => {
+                cancel = () => Promise.resolve();
+                if (err) {
+                    reject(err);
+                } else {
+                    console.log(out);
+
+                    resolve(out);
+                }
             }
-        }
         );
         cancel = ({ message }) => {
-			return new Promise((rResolve, rReject) => {
-				terminate(cp.pid, () => {
-					reject(message);
-				});
-			});
+            return new Promise((resolve) => {
+                terminate(cp.pid, () => {
+                    reject(message);
+                });
+            });
         };
     });
 }
@@ -42,9 +48,9 @@ function execute ({ cwd, url, args }) {
 function getInfo ({ cwd, url, format }) {
     let args = [];
     if (format) {
-        args = [...args, '-f', format];
+        args = [ ...args, '-f', format ];
     }
-    args = [...args, '--print-json', '-s'];
+    args = [ ...args, '--print-json', '-s' ];
     return execute({ cwd, url, args });
 }
 
@@ -68,10 +74,10 @@ function streamVideoIntoFile ({ cwd, url, filename, format }) {
     }
     let args = [];
     if (format) {
-        args = [...args, '-f', format];
+        args = [ ...args, '-f', format ];
     }
-    args = [...args, '-o', filename, '--no-part'];
-    return execute({cwd, url, args});
+    args = [ ...args, '-o', filename, '--no-part' ];
+    return execute({ cwd, url, args });
 }
 
 function abort () {
