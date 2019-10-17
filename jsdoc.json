@@ -1,0 +1,16 @@
+{
+	"tags": {
+		"allowUnknownTags": true
+	},
+	"source": {
+		"include": [ "." ],
+		"exclude": [ "node_modules" ],
+		"includePattern": ".+\\.js(doc|x)?$",
+		"excludePattern": ""
+	},
+	"plugins": [ "jsdoc-vuex-plugin" ],
+	"templates": {
+		"cleverLinks": false,
+		"monospaceLinks": false
+	}
+}
