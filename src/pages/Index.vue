@@ -17,7 +17,7 @@
         <!--GET INFO BUTTON-->
         <q-btn
           class="full-width get_info_button"
-          :loading="$store.getters['mediamanager/isGettingVideoInformation']"
+          :loading="IsGettingInfo"
           color="primary"
           label="Get Info"
           @click="GetVideoInfo"
@@ -26,10 +26,10 @@
     </div>
 
     <!--VIDEO INFORMATION CARD-->
-    <q-card v-if="!!$store.getters['mediamanager/getVideo']">
+    <q-card v-if="!!InfoSection.data">
       <!--THUMBNAIL-->
-      <q-img :src="$store.getters['mediamanager/getVideo'].thumbnail" spinner-color="white" basic class="video-thumbnail">
-        <div class="absolute-bottom text-subtitle2 text-center">{{$store.getters['mediamanager/getVideo'].title}}</div>
+      <q-img :src="InfoSection.data.thumbnail" spinner-color="white" basic class="video-thumbnail">
+        <div class="absolute-bottom text-subtitle2 text-center">{{InfoSection.data.title}}</div>
       </q-img>
       <q-card-section>
         <!--BASIC INFORMATION-->
@@ -39,7 +39,7 @@
             :key="`${index}-${Info.field}`"
           >
             <q-item-label>{{Info.label}}</q-item-label>
-            <q-item-label caption lines="2">{{$store.getters['mediamanager/getVideo'][Info.field]}}</q-item-label>
+            <q-item-label caption lines="2">{{InfoSection.data[Info.field]}}</q-item-label>
           </q-card-section>
         </q-card>
         <q-card>
@@ -112,66 +112,28 @@
 
 <script>
 import '../store/Mediamanager/doc/MediaManagerDoc';
-// const asyncEvery = async function (array, callback) {
-//     let ok = true;
-//     for (let index = 0; index < array.length; index++) {
-//         ok = await callback(array[index], index, array);
-//         if (!ok) {
-//             index = array.length + 1;
-//         }
-//     }
-//     return ok;
-// };
-// const TrackProgress = function ({ file, size = 0, totalSize, listener }) {
-//     fs.watchFile(
-//         file,
-//         {
-//             interval: 200
-//         },
-//         (current, previous) => {
-//             if (typeof totalSize === 'number' && totalSize > 0) {
-//                 let percentage = (current.size + size) / totalSize;
-//                 console.log(percentage);
-
-//                 listener({ CurrentProgress: percentage });
-//                 return;
-//             }
-//             listener({ CurrentProgress: 404 });
-//         }
-//     );
-// };
-// const UnTrackProgress = function ({ file }) {
-//     try {
-//         fs.unwatchFile(file);
-//     } catch {}
-// };
-/**
- * @type {String}
- */
-let CurrentVideoUrl;
-
-/**
- * @type {VideoInfo}
- */
-let currentVideoInfo;
 export default {
     name: 'PageIndex',
     created () {},
     methods: {
         ChooseDirectory: async function () {
-            this.Directory = this.$q.electron.remote.dialog.showOpenDialog({
-                properties: ['openDirectory']
-            })[0];
+            try {
+                this.Directory = this.$q.electron.remote.dialog.showOpenDialog({
+                    properties: ['openDirectory']
+                })[0];
+            } catch (obj) {
+
+            }
         },
         GetVideoInfo: async function () {
             try {
+                this.IsGettingInfo = true;
                 /**
                * @type {VideoInfo}
                */
                 const info = await this.$store.dispatch('mediamanager/getVideoInfo', this.VideoUrl);
-                currentVideoInfo = info;
-                CurrentVideoUrl = this.VideoUrl;
-                console.log(CurrentVideoUrl);
+                this.InfoSection.data = info;
+                this.InfoSection.CurrentVideoUrl = this.VideoUrl;
                 this.InfoSection.formats.audio.list = [];
                 this.InfoSection.formats.video.list = [];
                 this.InfoSection.formats.audioAndVideo.list = [];
@@ -290,6 +252,8 @@ export default {
                     color: 'negative',
                     timeout: 1000
                 });
+            } finally {
+                this.IsGettingInfo = false;
             }
         },
         Download: async function () {
@@ -301,12 +265,19 @@ export default {
                     chosenFormat: this.ChosenFormat.format_id.split('+'),
                     chosenExtension: this.ChosenFormat.ext,
                     folder: this.Directory,
-                    URL: CurrentVideoUrl,
-                    id: currentVideoInfo.extractor_key + currentVideoInfo.id + this.ChosenFormat.format_id,
-                    thumbnail: currentVideoInfo.thumbnail,
-                    title: currentVideoInfo.fulltitle
+                    URL: this.InfoSection.CurrentVideoUrl,
+                    id: this.InfoSection.data.extractor_key + this.InfoSection.data.id + this.ChosenFormat.format_id,
+                    thumbnail: this.InfoSection.data.thumbnail,
+                    title: this.InfoSection.data.fulltitle
                 };
                 await this.$store.dispatch('mediamanager/addVideoToTask', task);
+                this.$q.notify({
+                    message: 'Video added to queue',
+                    color: 'positive',
+                    timeout: 1000
+                });
+                this.InfoSection.data = null;
+                this.VideoUrl = '';
             } catch (error) {
                 this.$q.notify({
                     message: error.message,
@@ -315,181 +286,6 @@ export default {
                 });
             }
         }
-        // HandleFailed: function ({ message, tempPath }) {
-        //     console.log({ message, tempPath });
-
-        //     if (tempPath) {
-        //         removeFolder({ tempPath });
-        //     }
-
-        //     this.DownloadSection.failed = true;
-        //     this.DownloadSection.isFinished = true;
-        //     this.DownloadSection.errorMessage = message;
-        //     this.DownloadSection.progress = 1;
-        // },
-        // DownloadVideo: async function () {
-        //     if (!this.Directory) {
-        //         this.$q.notify('Please choose a directory');
-        //         return;
-        //     }
-        //     if (!this.ChosenFormat) {
-        //         this.$q.notify('Please choose a format');
-        //         return;
-        //     }
-
-        //     const HandleFailed = this.HandleFailed;
-
-        //     this.DownloadSection.status = 'Preparing...';
-        //     this.ShowDownloadDialog = true;
-        //     this.DownloadSection.isFinished = false;
-        //     this.DownloadSection.progress = -1;
-        //     this.DownloadSection.failed = false;
-        //     const url = this.CurrentVideoUrl;
-        //     const directory = this.Directory;
-        //     const chosenExt = this.ChosenFormat.ext;
-        //     const filename = RemoveIllegalFilenameCharacters(
-        //         `${this.InfoSection.data.fulltitle}${
-        //             this.ChosenFormat.height ? ` - ${this.ChosenFormat.height}P` : ''
-        //         }.${this.ChosenFormat.ext}`
-        //     );
-
-        //     // Get info section
-        //     this.DownloadSection.status = 'Getting information...';
-        //     let formatIds = Factory.Format(this.ChosenFormat).formatId.split('+');
-        //     let infos = [];
-        //     while (formatIds.length > 0) {
-        //         const { error, result } = await handlePromise(
-        //             downloadInfo({ url, format: formatIds.pop(), cwd: directory })
-        //         );
-        //         if (error) {
-        //             this.HandleFailed({ error });
-        //             return;
-        //         }
-        //         infos.push(Factory.Format(JSON.parse(result)));
-        //     }
-        //     console.log(infos);
-
-        //     const totalSize = infos.reduce((acc, curr) => acc + curr.filesize, 0);
-        //     // Create folder
-        //     const tempFolder = infos[0].id;
-        //     await fs.mkdirp(path.join(directory, tempFolder));
-
-        //     // Download media(s)
-        //     let tempFileNames = [];
-        //     let totalDownloaded = 0;
-        //     this.DownloadSection.status = 'Piping media...';
-        //     let isOk = await asyncEvery(infos, async info => {
-        //         let tempName = `${info.formatId}.${info.ext}`;
-        //         const currentTempFilePath = path.join(directory, tempFolder, tempName);
-        //         tempFileNames.push(tempName);
-        //         TrackProgress({
-        //             file: currentTempFilePath,
-        //             size: totalDownloaded,
-        //             totalSize: totalSize,
-        //             listener: ({ CurrentProgress }) => {
-        //                 this.DownloadSection.progress = CurrentProgress;
-        //             }
-        //         });
-        //         const { error } = await handlePromise(
-        //             downloadMedia({
-        //                 url,
-        //                 cwd: path.join(directory, tempFolder),
-        //                 filename: tempName,
-        //                 format: info.formatId
-        //             })
-        //         );
-        //         UnTrackProgress({ file: currentTempFilePath });
-        //         if (error) {
-        //             HandleFailed({
-        //                 message: `Failed to download ${info.format}`,
-        //                 tempPath: fs.join(directory, tempFolder)
-        //             });
-        //             return false;
-        //         }
-        //         totalDownloaded += info.filesize;
-        //         return true;
-        //     });
-        //     if (!isOk) {
-        //         return;
-        //     }
-        //     // Combining section
-        //     if (tempFileNames.length > 1) {
-        //         this.DownloadSection.status = 'Combining media...';
-        //         const tempFilename = `${tempFileNames.join('')}.${chosenExt}`;
-        //         const tempFilePath = path.join(directory, tempFolder, tempFilename);
-        //         TrackProgress({
-        //             file: tempFilePath,
-        //             size: 0,
-        //             totalSize: infos.reduce((acc, curr) => acc + curr.filesize, 0),
-        //             listener: ({ CurrentProgress }) => {
-        //                 this.DownloadSection.progress = CurrentProgress;
-        //             }
-        //         });
-        //         const { error } = await handlePromise(
-        //             combine({
-        //                 cwd: path.join(directory, tempFolder),
-        //                 inputs: tempFileNames,
-        //                 output: tempFilename
-        //             })
-        //         );
-        //         UnTrackProgress({ file: tempFilePath });
-        //         if (error) {
-        //             HandleFailed({
-        //                 message: error,
-        //                 tempPath: path.join(directory, tempFolder)
-        //             });
-        //             console.error(error);
-        //             return;
-        //         }
-        //         tempFileNames.push(tempFilename);
-        //     }
-        //     const last = getLast(tempFileNames);
-
-        //     // Convert section
-        //     if (path.extname(last) !== `.${chosenExt}`) {
-        //         this.DownloadSection.status = 'Converting media...';
-        //         const tempFilename = `${last}.${chosenExt}`;
-        //         const tempFilePath = path.join(directory, tempFolder, tempFilename);
-        //         TrackProgress({
-        //             file: tempFilePath,
-        //             size: 0,
-        //             totalSize: infos.reduce((acc, curr) => acc + curr.filesize, 0),
-        //             listener: ({ CurrentProgress }) => {
-        //                 this.DownloadSection.progress = CurrentProgress;
-        //             }
-        //         });
-        //         const { error } = await handlePromise(
-        //             convert({
-        //                 cwd: path.join(directory, tempFolder),
-        //                 input: last,
-        //                 output: tempFilename
-        //             })
-        //         );
-        //         UnTrackProgress({
-        //             file: tempFilePath
-        //         });
-        //         if (error) {
-        //             HandleFailed({
-        //                 message: error,
-        //                 tempPath: path.join(directory, tempFolder)
-        //             });
-        //             console.error(error);
-        //             return;
-        //         }
-        //     }
-
-        //     fs.moveSync(
-        //         path.join(directory, tempFolder, getLast(tempFileNames)),
-        //         path.join(directory, filename)
-        //     );
-        //     fs.remove(path.join(directory, tempFolder));
-
-        //     this.DownloadSection.progress = 1;
-        //     this.DownloadSection.isFinished = true;
-        // },
-        // Abort: function () {
-        //     ipcRenderer.send('abort');
-        // }
     },
     data () {
         return {
@@ -498,9 +294,10 @@ export default {
             ChosenFormat: {},
             Directory: '',
             ShowFormats: false,
+            IsGettingInfo: false,
             InfoSection: {
-                Show: false,
-                data: {},
+                CurrentVideoUrl: '',
+                data: null,
                 formats: {
                     custom: {
                         label: 'Preset',

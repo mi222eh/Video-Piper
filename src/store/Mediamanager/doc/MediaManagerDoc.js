@@ -1,8 +1,6 @@
 /**
  * @typedef {Object} MediaManagerState The state object
- * @property {Boolean} isGettingVideoInformation
  * @property {Boolean} isWorking
- * @property {VideoInfo} video
  * @property {VideoTask[]} videoQueue
  */
 

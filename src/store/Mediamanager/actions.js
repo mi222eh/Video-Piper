@@ -10,10 +10,6 @@ import path from 'path';
   * @param {String} url
   */
 export async function getVideoInfo (context, url) {
-    if (context.state.isGettingVideoInformation) {
-        throw new Error('Already fetching a video');
-    }
-    context.commit('SET_IS_GETTING_VIDEO_INFORMATION_STATUS', true);
     let info;
     try {
         info = await context.dispatch('getVideoFormatInfo', { url, format: 'bestvideo+bestaudio' });
@@ -23,13 +19,11 @@ export async function getVideoInfo (context, url) {
             info = await context.dispatch('getVideoFormatInfo', { url });
         } catch (error) {}
     }
-    context.commit('SET_IS_GETTING_VIDEO_INFORMATION_STATUS', false);
     if (!info) {
         throw new Error("Video couldn't be loaded");
     }
     info = JSON.parse(info);
     info.duration_formatted = formatDuration(info.duration) || 'Unknown';
-    context.commit('setCurrentVideo', info);
     return info;
 }
 /**
@@ -39,6 +33,16 @@ export async function getVideoInfo (context, url) {
   */
 export async function getVideoFormatInfo (context, opts) {
     return youtubeDl.getInfo({ url: opts.url, format: opts.format || '' });
+}
+/**
+ * @param {MediaManagerContext} context
+ * @param {VideoTask} videoTask
+ */
+export async function abort (context, id) {
+    const task = context.state.videoQueue.find((x) => x.id === id);
+    await youtubeDl.abort();
+    await ffmpeg.abort();
+    task.status = 'error';
 }
 /**
  * @param {MediaManagerContext} context
@@ -63,9 +67,12 @@ export async function doNext (context) {
     if (context.state.isWorking) {
         return;
     }
+    const task = context.state.videoQueue.find((task) => task.status === 'ready');
+    if (!task) {
+        return;
+    }
+    context.commit('SET_IS_WORKING', true);
     try {
-        context.commit('SET_IS_WORKING', true);
-        const task = context.state.videoQueue.find((task) => task.status === 'ready');
         console.log(task);
         context.commit('SetVideoTaskStatus', { id: task.id, status: 'preparing' });
         /**
@@ -134,77 +141,42 @@ export async function doNext (context) {
             tracker.close();
             tempFileNames.push(tempFilename);
         }
-
+        // Convert section
+        const last = tempFileNames[tempFileNames.length - 1];
+        if (path.extname(last) !== `.${task.chosenExtension}`) {
+            context.commit('SetVideoTaskStatus', { id: task.id, status: 'converting' });
+            const tempFilename = `${last}.${task.chosenExtension}`;
+            const tempFilePath = path.join(tempFolder, tempFilename);
+            const tracker = TrackProgress({
+                file: tempFilePath,
+                size: 0,
+                totalSize,
+                listener: (progress) => {
+                    context.commit('setPercentageOnTask', { id: task.id, percentage: progress });
+                }
+            });
+            await ffmpeg.convert({
+                cwd: tempFolder,
+                input: last,
+                output: tempFilename
+            });
+            tracker.close();
+        }
+        await fs.move(
+            path.join(tempFolder, tempFileNames[tempFileNames.length - 1]),
+            path.join(task.folder, filename),
+            {
+                overwrite: true
+            }
+        );
+        await fs.remove(tempFolder);
+        context.commit('setPercentageOnTask', { id: task.id, percentage: 1 });
         context.commit('SetVideoTaskStatus', { id: task.id, status: 'done' });
     } catch (error) {
+        context.commit('SetVideoTaskStatus', { id: task.id, status: 'error' });
+        console.error(error);
     } finally {
     }
-    // // Combining section
-    // if (tempFileNames.length > 1) {
-    //     this.DownloadSection.status = 'Combining media...';
-    //     const tempFilename = `${tempFileNames.join('')}.${chosenExt}`;
-    //     const tempFilePath = path.join(directory, tempFolder, tempFilename);
-    //     TrackProgress({
-    //         file: tempFilePath,
-    //         size: 0,
-    //         totalSize: infos.reduce((acc, curr) => acc + curr.filesize, 0),
-    //         listener: ({ CurrentProgress }) => {
-    //             this.DownloadSection.progress = CurrentProgress;
-    //         }
-    //     });
-    //     const { error } = await handlePromise(
-    //         combine({
-    //             cwd: path.join(directory, tempFolder),
-    //             inputs: tempFileNames,
-    //             output: tempFilename
-    //         })
-    //     );
-    //     UnTrackProgress({ file: tempFilePath });
-    //     if (error) {
-    //         HandleFailed({
-    //             message: error,
-    //             tempPath: path.join(directory, tempFolder)
-    //         });
-    //         console.error(error);
-    //         return;
-    //     }
-    //     tempFileNames.push(tempFilename);
-    // }
-    // const last = getLast(tempFileNames);
-    // // Convert section
-    // if (path.extname(last) !== `.${chosenExt}`) {
-    //     this.DownloadSection.status = 'Converting media...';
-    //     const tempFilename = `${last}.${chosenExt}`;
-    //     const tempFilePath = path.join(directory, tempFolder, tempFilename);
-    //     TrackProgress({
-    //         file: tempFilePath,
-    //         size: 0,
-    //         totalSize: infos.reduce((acc, curr) => acc + curr.filesize, 0),
-    //         listener: ({ CurrentProgress }) => {
-    //             this.DownloadSection.progress = CurrentProgress;
-    //         }
-    //     });
-    //     const { error } = await handlePromise(
-    //         convert({
-    //             cwd: path.join(directory, tempFolder),
-    //             input: last,
-    //             output: tempFilename
-    //         })
-    //     );
-    //     UnTrackProgress({
-    //         file: tempFilePath
-    //     });
-    //     if (error) {
-    //         HandleFailed({
-    //             message: error,
-    //             tempPath: path.join(directory, tempFolder)
-    //         });
-    //         console.error(error);
-    //         return;
-    //     }
-    // }
-    // fs.moveSync(path.join(directory, tempFolder, getLast(tempFileNames)), path.join(directory, filename));
-    // fs.remove(path.join(directory, tempFolder));
-    // this.DownloadSection.progress = 1;
-    // this.DownloadSection.isFinished = true;
+    context.commit('SET_IS_WORKING', false);
+    context.dispatch('doNext');
 }

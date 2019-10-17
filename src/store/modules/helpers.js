@@ -35,21 +35,18 @@ export function formatDuration (ms) {
   * @param {TrackOptions} param0
   */
 export function TrackProgress ({ file, size = 0, totalSize, listener }) {
-    const intId = setInterval(() => {
+    const intId = setInterval(async () => {
+        console.log('TRACKER');
         if (typeof totalSize === 'number' && totalSize > 0) {
-            console.log('TRACKER');
-            fs.stat(file, (obj, fileInfo) => {
-                if (obj) {
-                    return;
-                }
-                let percentage = (fileInfo.size + size) / totalSize;
-                console.log(percentage);
-                listener(percentage);
-            });
+            const fileInfo = await fs.stat(file);
+            let percentage = (fileInfo.size + size) / totalSize;
+            console.log(percentage);
+            listener(percentage);
         } else {
+            console.log(404);
             listener(404);
         }
-    }, 200);
+    }, 400);
 
     return {
         close: () => clearInterval(intId)

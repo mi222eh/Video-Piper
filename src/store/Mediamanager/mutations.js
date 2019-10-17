@@ -41,6 +41,22 @@ export function setPercentageOnTask (state, payload) {
     const videoTask = state.videoQueue.find((task) => task.id === payload.id);
     videoTask.percentage = payload.percentage;
 }
+/**
+ *
+ * @param {MediaManagerState} state
+ * @param {Number} id
+ */
+export function clearTask (state, id) {
+    state.videoQueue = state.videoQueue.filter((task) => task.id !== id);
+}
+/**
+ *
+ * @param {MediaManagerState} state
+ * @param {Number} id
+ */
+export function clearFinishedTasks (state) {
+    state.videoQueue = state.videoQueue.filter((task) => task.status !== 'done');
+}
 
 /**
  *
