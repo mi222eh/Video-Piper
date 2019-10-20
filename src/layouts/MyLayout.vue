@@ -35,5 +35,6 @@ export default {
 <style>
 body {
   overflow: auto;
+  background: darkgrey;
 }
 </style>

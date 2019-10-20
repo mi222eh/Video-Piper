@@ -32,5 +32,5 @@ export function getTaskQueue (state) {
  * @param {MediaManagerState} state
  */
 export function getActiveQueueCount (state) {
-    return state.videoQueue.length;
+    return state.videoQueue.filter((x) => x.status !== 'done').length;
 }

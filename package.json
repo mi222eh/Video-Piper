@@ -1,6 +1,6 @@
 {
   "name": "videopiper",
-  "version": "1.3.3",
+  "version": "2.0.0",
   "description": "Download online videos",
   "productName": "Meeks Video Piper",
   "cordovaId": "org.cordova.quasar.app",
