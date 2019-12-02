@@ -1,15 +1,10 @@
 <template>
   <q-layout view="hHh LpR fFf">
 
-    <q-header reveal elevated class="bg-primary text-white" height-hint="98">
-      <q-toolbar>
-        <q-toolbar-title>
-          Video Piper
-        </q-toolbar-title>
-      </q-toolbar>
-
+    <q-header elevated class="bg-primary text-white" height-hint="98">
       <q-tabs align="left">
-        <q-route-tab to="/" :label="`Home`" />
+        <q-route-tab to="/" :label="`Video`" />
+        <!-- <q-route-tab to="/playlist" :label="`Playlist`" /> -->
         <q-route-tab to="/queue" :label="`Video Queue`">
             <q-badge color="accent" text-color="white" floating>{{$store.getters['mediamanager/getActiveQueueCount']}}</q-badge>
         </q-route-tab>
@@ -23,18 +18,16 @@
   </q-layout>
 </template>
 
-<script>
-export default {
+<script lang="ts">
+import Vue from 'vue'
+
+export default Vue.extend({
     data () {
         return {
         };
     }
-};
+});
 </script>
 
 <style>
-body {
-  overflow: auto;
-  background: darkgrey;
-}
 </style>

@@ -1,10 +1,12 @@
-const routes = [
+import { RouteConfig } from 'vue-router'
+const routes: RouteConfig[] = [
     {
         path: '/',
         component: () => import('layouts/MyLayout.vue'),
         children: [
             { path: '', component: () => import('pages/Index.vue') },
-            { path: '/queue', component: () => import('pages/queue.vue') }
+            { path: '/queue', component: () => import('pages/Queue.vue') },
+            { path: '/playlist', component: () => import('pages/Playlist.vue') }
         ]
     }
 ];

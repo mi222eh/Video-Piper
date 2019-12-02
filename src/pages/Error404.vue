@@ -15,8 +15,10 @@
   </div>
 </template>
 
-<script>
-export default {
-    name: 'Error404'
-};
+<script lang="ts">
+import Vue from 'vue'
+
+export default Vue.extend({
+  name: 'Error404'
+});
 </script>

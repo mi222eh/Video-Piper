@@ -1,8 +1,3 @@
-/**
- * @typedef {Object} MediaManagerState The state object
- * @property {Boolean} isWorking
- * @property {VideoTask[]} videoQueue
- */
 
 /**
  * @typedef {Object} VideoInfo THE VIDEO INFO FROM THE YOUTUBE-DL
@@ -92,21 +87,36 @@
  */
 
 /**
- * @typedef {Object} VideoTask
- * @property {String[]} chosenFormat
- * @property {String} chosenExtension
- * @property {String} id
- * @property {String} folder
- * @property {String} URL
- * @property {String} thumbnail
- * @property {String} title
- * @property {"ready" | "preparing" | "error" | "downloading" | "converting" | "done"} status
- * @property {Number} percentage
- */
-
-/**
  * @typedef {Object} MediaManagerContext Context object of media managet
  * @property {Function} commit
  * @property {Function} dispatch
  * @property {MediaManagerState} state
+ */
+/**
+ * @typedef {Object} MediaManagerState The state object
+ * @property {Boolean} isWorking
+ * @property {VideoTask[]} videoQueue
+ */
+
+/**
+ * @typedef {Object} VideoTaskInfo
+ * @property {VideoFormat} chosenFormat
+ * @property {VideoInfo} videoInfo
+ * @property {String} folder
+ * @property {String} URL
+ * @property {String[]} tempFileNames
+ * @property {String} tempFolder
+ * @property {String} id
+ */
+
+/**
+ * @typedef {Object} VideoTask
+ * @property {VideoTaskInfo} info
+ * @property {ChildProcess} process
+ * @property {Number} percentage
+ * @property {"ready" | "stopped" | "preparing" | "error" | "downloading" | "combining" | "converting" | "done"} status
+ * @property {String} statusText
+ * @property {Boolean} inProgress
+ * @property {Boolean} isStopped
+ * @property {Boolean} isFinished
  */

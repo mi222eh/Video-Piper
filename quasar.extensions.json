@@ -13,11 +13,13 @@
           "iconHash": "581b1ad4ac9c1d8c0d79fab094080c61"
         }
       },
-      "build": {
-        "electron": {
-          "iconHash": "581b1ad4ac9c1d8c0d79fab094080c61"
-        }
-      }
+      "build": {}
     }
+  },
+  "@quasar/typescript": {
+    "webpack": "plugin",
+    "rename": true,
+    "vscode": true,
+    "prettier": true
   }
 }
