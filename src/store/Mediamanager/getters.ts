@@ -1,4 +1,4 @@
-import { State } from './mediaManager';
+import { State } from './mediaManagerTypes';
 
 export function getTaskQueue(state: State) {
     return state.videoQueue;

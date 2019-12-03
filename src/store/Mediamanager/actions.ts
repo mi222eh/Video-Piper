@@ -1,4 +1,4 @@
-import { Context, VideoTask, VideoTaskInfo, VideoTaskStatus } from './mediaManager';
+import { Context, VideoTask, VideoTaskInfo, VideoTaskStatus } from './mediaManagerTypes';
 import youtubeDl from '../modules/youtubedl';
 import ffmpeg from '../modules/ffmpeg';
 import { formatDuration, TrackProgress } from '../modules/helpers';

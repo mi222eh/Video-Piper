@@ -1,5 +1,5 @@
 import './doc/MediaManagerDoc';
-import { State, VideoTask, VideoTaskStatus } from './mediaManager';
+import { State, VideoTask, VideoTaskStatus } from './mediaManagerTypes';
 import { VideoInfo } from '../types/Video/VideoInfo';
 import merge from 'merge';
 import state from './state';
