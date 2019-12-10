@@ -1,5 +1,4 @@
-import { PlaylistState } from "./state";
-
+import { PlaylistState } from "./playlistTypes";
 
 
 export function GetIsBusy (state: PlaylistState) {

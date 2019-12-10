@@ -1,6 +1,7 @@
-import { PlaylistState } from "./state";
+import { PlaylistState } from "./playlistTypes";
 
-export function SET_FINISHED_VIDEOS (state:PlaylistState, finishedNumber) {
+
+export function SET_FINISHED_VIDEOS (state:PlaylistState, finishedNumber:Number) {
     state.finishedVideos = finishedNumber;
 }
 

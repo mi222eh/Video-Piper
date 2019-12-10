@@ -1,5 +1,4 @@
 import { VideoPlaylist } from "../types/VideoPlaylist";
-import { PlaylistState } from "./state";
 
 export interface PlaylistContext{
     commit(mutator:string, payload?:any): void,
