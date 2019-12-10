@@ -59,9 +59,14 @@ module.exports = function(ctx) {
                 'QSelect',
                 'QExpansionItem',
                 'QSpace',
-                'QSeparator'
+                'QSeparator',
+                'QVirtualScroll',
+                'QBtnToggle',
+                'QToggle'
             ],
-
+            config: {
+                dark: 'auto' // or Boolean true/false
+            },
             directives: ['Ripple', 'ClosePopup'],
 
             // Quasar plugins

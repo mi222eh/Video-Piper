@@ -47,7 +47,7 @@ export async function downloadMedia(context: Context, task: VideoTask) {
         format: formats[task.info.tempFileNames.length],
         url: task.info.URL
     });
-    const tempFilename = `${task.info.id}${info.format_id}.${info.ext}`;
+    const tempFilename = `${task.info.tempFileNames.length}.${info.ext}`;
     const tracker = TrackProgress({
         file: path.join(task.info.tempFolder, tempFilename),
         size: 0,
@@ -96,6 +96,8 @@ export async function combineMedia(context: Context, task: VideoTask) {
     const tempFileName = `${task.info.tempFileNames.join('')}.${
         task.info.chosenFormat.ext
     }`;
+    console.log("COMBINE", task, tempFileName);
+    
     await fs.remove(path.join(task.info.tempFolder, tempFileName));
     const tracker = TrackProgress({
         file: path.join(task.info.tempFolder, tempFileName),
@@ -154,7 +156,7 @@ export async function moveFinalFile(task: VideoTask) {
     );
 }
 export async function convertMedia(context: Context, task: VideoTask) {
-    const last = task.info.tempFileNames[task.info.tempFileNames.length];
+    const last = task.info.tempFileNames[task.info.tempFileNames.length - 1];
     const tempFileName = `${last}.${task.info.chosenFormat.ext}`;
     await fs.remove(path.join(task.info.tempFolder, tempFileName));
     const tracker = TrackProgress({
@@ -200,7 +202,12 @@ export async function convertMedia(context: Context, task: VideoTask) {
 }
 
 async function removeTempFolder(task: VideoTask) {
-    await fs.remove(task.info.tempFolder);
+    try{
+        await fs.remove(task.info.tempFolder);
+    }
+    catch(err){
+        console.log("Temo folder doesn't exist", err);
+    }
 }
 
 export async function getVideoInfo(context: Context, url: string) {
@@ -221,7 +228,7 @@ export async function getVideoInfo(context: Context, url: string) {
     return json;
 }
 
-export async function getPlaylistInfo(url: string) {
+export async function getPlaylistInfo(context:Context, url: string) {
     const json: string = await new Promise((resolve, reject) => {
         youtubeDl.getPlaylistInfo({
             url,
@@ -302,7 +309,7 @@ export async function performVideoTask(context: Context, task: VideoTask) {
         }
 
         // COMBINING
-        if (task.info.tempFileNames.length > 1) {
+        if (task.info.tempFileNames.length === 2) {
             context.commit('TASKSetStatus', {
                 id: task.info.id,
                 status: 'combining'
@@ -423,8 +430,11 @@ export async function doNextTask(context: Context) {
 }
 export async function removeAllTasksWithStatus(context:Context, payload:{status: VideoTaskStatus}){
     const videos = context.state.videoQueue.filter(x => x.status === payload.status);
-    videos.forEach(async task => {
-        await context.dispatch('removeTempFolder', task);
+    videos.forEach(task => {
+        if(_ProcessBank[task.info.id]){
+            terminate(_ProcessBank[task.info.id]);
+        }
+        context.dispatch('removeTempFolder', task);
         context.commit('clearTask', {id:task.info.id});
     });
 }
@@ -448,4 +458,20 @@ export async function startAllTasks(context:Context){
 export async function init(context: Context) {
     console.log('init');
     setInterval(() => context.dispatch('doNextTask'), 1200);
+    setInterval(() =>{
+        Object.keys(_ProcessBank).forEach(taskId => {
+            const video = context.state.videoQueue.find(x => x.info.id === taskId);
+            if(!video){
+                return;
+            } 
+            if(video.inProgress){
+                return;
+            }
+            const process = _ProcessBank[taskId];
+            if(!process){
+                return;
+            }
+            terminate(process.pid);
+        });
+    }, 600);
 }

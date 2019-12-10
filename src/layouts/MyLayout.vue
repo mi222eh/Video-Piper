@@ -4,7 +4,7 @@
     <q-header elevated class="bg-primary text-white" height-hint="98">
       <q-tabs align="left">
         <q-route-tab to="/" :label="`Video`" />
-        <!-- <q-route-tab to="/playlist" :label="`Playlist`" /> -->
+        <q-route-tab to="/playlist" :label="`Playlist`" />
         <q-route-tab to="/queue" :label="`Video Queue`">
             <q-badge color="accent" text-color="white" floating>{{$store.getters['mediamanager/getActiveQueueCount']}}</q-badge>
         </q-route-tab>
@@ -29,5 +29,14 @@ export default Vue.extend({
 });
 </script>
 
-<style>
+<style lang="scss">
+
+main{
+  display: flex;
+  flex-direction: column;
+  padding:1rem;
+  >*{
+    margin-top:1rem;
+  }
+}
 </style>

@@ -24,7 +24,7 @@ function execute({
 }
 interface GetPlaylistOptions extends CommandURL, FinishedListener{}
 function getPlaylistInfo({ url, finishedListener = () => '' }: GetPlaylistOptions) {
-    const args: string[] = ['-J', '--yes-playlist', '-s'];
+    const args: string[] = ['-J', '--yes-playlist', '--flat-playlist', '-s'];
     return execute({ url, args, finishedListener });
 }
 
@@ -59,7 +59,7 @@ function streamVideoIntoFile({
     if (format) {
         args = [...args, '-f', format];
     }
-    args = [...args, '-o', filename, '--no-part'];
+    args = [...args, '-o', filename, '--no-part', '--mark-watched'];
     return execute({ cwd, url, args, finishedListener });
 }
 

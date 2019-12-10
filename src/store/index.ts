@@ -9,13 +9,15 @@ import Vuex from 'vuex';
 
 import mediamanager from './Mediamanager';
 import index from './index/index';
+import playlist from './playlist/index'
 
 Vue.use(Vuex);
 export default function () {
     const Store = new Vuex.Store({
         modules: {
             mediamanager,
-            index
+            index,
+            playlist
         },
         strict: !!process.env.DEV
     });

@@ -42,7 +42,9 @@ export interface VideoTaskInfo{
     tempFileNames: string[],
     tempFolder: string,
     id: string,
-    actionHistory: string[]
+    actionHistory: string[],
+    groupId: string,
+    groupName: string
 }
 export interface ProcessBank{
     [taskId:string]: ChildProcess | null | undefined

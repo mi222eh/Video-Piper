@@ -1,5 +1,5 @@
 <template>
-    <div class="q-pa-md">
+    <main>
         <!--DIRECTORY INPUT-->
         <q-item clickable v-ripple @click="ChooseDirectory">
             <q-item-section avatar top>
@@ -22,7 +22,7 @@
         <!--GET INFO BUTTON-->
         <q-btn
             :loading="IsGettingInfo"
-            class="full-width q-mt-md"
+            class="full-width"
             color="primary"
             label="Get Info"
             @click="GetVideoInfo"
@@ -162,7 +162,7 @@
                 </q-card-section>
             </q-card>
         </q-dialog>
-    </div>
+    </main>
 </template>
 
 <script lang="ts">
@@ -170,7 +170,7 @@ import '../store/Mediamanager/doc/MediaManagerDoc';
 import Vue from 'vue';
 import { VideoInfo } from '../store/types/Video/VideoInfo';
 import { VideoFormat } from '../store/types/Video/VideoFormat';
-import { VideoTaskInfo } from '../store/Mediamanager/mediaManager';
+import { VideoTaskInfo } from '../store/Mediamanager/mediaManagerTypes';
 
 interface Data {
     VideoUrl: string;
@@ -393,7 +393,9 @@ export default Vue.extend({
                     id:
                         this.InfoSection.data.extractor_key +
                         this.InfoSection.data.id +
-                        this.ChosenFormat.format_id
+                        this.ChosenFormat.format_id,
+                    groupId: '0',
+                    groupName: "regular"
                 };
                 await this.$store.dispatch('mediamanager/addTaskToQueue', task);
                 this.$q.notify({
