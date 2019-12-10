@@ -428,22 +428,23 @@ export async function doNextTask(context: Context) {
     }
     context.dispatch('performVideoTask', task);
 }
-export async function removeAllTasksWithStatus(context:Context, payload:{status: VideoTaskStatus}){
-    const videos = context.state.videoQueue.filter(x => x.status === payload.status);
+export async function removeAllTasksWithStatus(context:Context, status: VideoTaskStatus){
+    const videos = context.state.videoQueue.filter(x => x.status === status);
+    console.log(videos);
     videos.forEach(task => {
         if(_ProcessBank[task.info.id]){
             terminate(_ProcessBank[task.info.id]);
         }
-        context.dispatch('removeTempFolder', task);
-        context.commit('clearTask', {id:task.info.id});
+        removeTempFolder(task);
+        context.dispatch('removeTask', task);
     });
 }
 export async function removeTask(context:Context, task:VideoTask){
-    await removeTempFolder(task);
+    removeTempFolder(task);
     context.commit('clearTask', task.info.id);
 }
 export async function stopAllTasks(context:Context){
-    const tasks = context.state.videoQueue.filter(task => !task.isStopped);
+    const tasks = context.state.videoQueue.filter(task => !task.isStopped && task.status !== VideoTaskStatus.done && task.status !== VideoTaskStatus.error);
     tasks.forEach(task => context.dispatch('stopTask', task.info.id));
 }
 export async function startAllTasks(context:Context){

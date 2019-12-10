@@ -65,7 +65,7 @@
                         />
                         <!-- START BUTTON -->
                         <q-btn
-                          v-else-if="task.inProgress === false"
+                          v-else-if="task.staus !== 'done'"
                           flat
                           round
                           size="12px"
@@ -112,7 +112,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import { VideoTask } from '../store/Mediamanager/mediaManagerTypes';
+import { VideoTask, VideoTaskStatus } from '../store/Mediamanager/mediaManagerTypes';
 
 export default Vue.extend({
   methods: {
@@ -120,14 +120,10 @@ export default Vue.extend({
       this.$store.dispatch('mediamanager/removeTask', task);
     },
     clearFinished() {
-      this.$store.dispatch('mediamanager/removeAllTasksWithStatus', {
-        status: 'done'
-      });
+      this.$store.dispatch('mediamanager/removeAllTasksWithStatus', VideoTaskStatus.done);
     },
     clearErrored() {
-      this.$store.dispatch('mediamanager/removeAllTasksWithStatus', {
-        status: 'error'
-      });
+      this.$store.dispatch('mediamanager/removeAllTasksWithStatus',  VideoTaskStatus.error);
     },
     stopTask(id: string) {
       this.$store.dispatch('mediamanager/stopTask', id);

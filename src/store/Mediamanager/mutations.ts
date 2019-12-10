@@ -21,7 +21,7 @@ export function addVideoTaskToQueue(state: State, videoTask: VideoTask) {
     state.videoQueue.push(videoTask);
 }
 export function clearTask(state: State, id: string) {
-    state.videoQueue = state.videoQueue.filter(task => !task.inProgress && task.info.id !== id);
+    state.videoQueue = state.videoQueue.filter(task => task.info.id !== id);
 }
 /**
  *
