@@ -114,12 +114,15 @@ interface Playlist {
 
 export default Vue.extend({
   methods: {
-    ChooseDirectory() {
+    async ChooseDirectory() {
       try {
-        const folder = this.$q.electron.remote.dialog.showOpenDialog({
+        const folder = await this.$q.electron.remote.dialog.showOpenDialog({
           properties: ['openDirectory']
-        })[0];
-        this.$store.commit('index/setFolder', folder);
+        });
+        if(!folder.filePaths){
+          return;
+        }
+        this.$store.commit('index/setFolder', folder.filePaths[0]);
       } catch (obj) {
         console.error(obj);
       }

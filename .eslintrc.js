@@ -59,16 +59,17 @@ module.exports = {
     'prefer-promise-reject-errors': 'off',
     quotes: ['warn', 'single'],
     '@typescript-eslint/indent': ['warn', 4],
+    '@typescript-eslint/camelcase': ['warn', 'never'],
 
     // allow console.log during development only
     'no-console': process.env.NODE_ENV === 'production' ? 'error' : 'off',
     // allow debugger during development only
     'no-debugger': process.env.NODE_ENV === 'production' ? 'error' : 'off',
 
+    "require-camelcase": "never",
+
     // Custom
-    'vue/component-name-in-template-casing': ['error', 'kebab-case'],
-    "camelcase": "off",
-    "@typescript-eslint/camelcase": ["error", { "properties": "never" }],
+    // 'vue/component-name-in-template-casing': ['warn', 'kebab-case'],
 
     // Correct typescript linting until at least 2.0.0 major release
     // See https://github.com/typescript-eslint/typescript-eslint/issues/501

@@ -1,5 +1,5 @@
 import { Context, VideoTask, VideoTaskInfo, VideoTaskStatus } from './mediaManagerTypes';
-import youtubeDl from '../modules/youtubedl';
+import * as youtubeDl from '../modules/youtubedl';
 import ffmpeg from '../modules/ffmpeg';
 import { formatDuration, TrackProgress } from '../modules/helpers';
 
@@ -34,7 +34,6 @@ export async function getVideoFormatInfo(
     });
     return JSON.parse(json);
 }
-
 export async function downloadMedia(context: Context, task: VideoTask) {
     const formats = task.info.chosenFormat.format_id.split('+');
     if (formats.length <= task.info.tempFileNames.length) {
@@ -200,7 +199,6 @@ export async function convertMedia(context: Context, task: VideoTask) {
         filename: tempFileName
     });
 }
-
 async function removeTempFolder(task: VideoTask) {
     try{
         await fs.remove(task.info.tempFolder);
@@ -209,7 +207,6 @@ async function removeTempFolder(task: VideoTask) {
         console.log("Temo folder doesn't exist", err);
     }
 }
-
 export async function getVideoInfo(context: Context, url: string) {
     let json: VideoInfo;
     try {
@@ -227,7 +224,6 @@ export async function getVideoInfo(context: Context, url: string) {
     json.durationFormatted = formatDuration(json.duration) || 'Unknown';
     return json;
 }
-
 export async function getPlaylistInfo(context:Context, url: string) {
     const json: string = await new Promise((resolve, reject) => {
         youtubeDl.getPlaylistInfo({
@@ -243,7 +239,6 @@ export async function getPlaylistInfo(context:Context, url: string) {
     });
     return JSON.parse(json);
 }
-
 export async function addTaskToQueue(
     context: Context,
     videoTaskInfo: VideoTaskInfo
@@ -288,6 +283,10 @@ export async function performVideoTask(context: Context, task: VideoTask) {
     context.commit('TASKSetIsStopped', {
         id: task.info.id,
         inProgress: true
+    });
+    context.commit('TASKSetIsFinished', {
+        id: task.info.id,
+        isFinished: false
     });
 
     try {
@@ -343,6 +342,10 @@ export async function performVideoTask(context: Context, task: VideoTask) {
             id: task.info.id,
             inProgress: false
         });
+        context.commit('TASKSetPercentage', {
+            id: task.info.id,
+            percent: 1
+        })
     } catch (error) {
         if (task.isStopped) {
             return;
@@ -359,6 +362,10 @@ export async function performVideoTask(context: Context, task: VideoTask) {
             id: task.info.id,
             inProgress: false
         });
+        context.commit('TASKSetPercentage', {
+            id: task.info.id,
+            percent: 0
+        })
         console.error(error);
     }
 }
@@ -451,13 +458,13 @@ export async function startAllTasks(context:Context){
     const tasks = context.state.videoQueue.filter(task => task.isStopped);
     tasks.forEach(task => context.dispatch('startTask', task.info.id));
 }
-
 /**
  *
  * @param {MediaManagerContext} context
  */
 export async function init(context: Context) {
     console.log('init');
+    youtubeDl.checkYoutubeDl();
     setInterval(() => context.dispatch('doNextTask'), 1200);
     setInterval(() =>{
         Object.keys(_ProcessBank).forEach(taskId => {

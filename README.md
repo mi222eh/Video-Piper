@@ -1,7 +1,26 @@
-# Video Piper
+# Quasar App (video-piper)
 
-A tool to download videos online. Either one at a time or an entire playlist.
+A Quasar Framework app
 
-Built using [Quasar](https://quasar.dev/) with [Typescript](https://github.com/microsoft/TypeScript)
+## Install the dependencies
+```bash
+npm install
+```
 
-This application is using [youtube-dl](https://github.com/ytdl-org/youtube-dl) and [ffmpeg](https://github.com/FFmpeg/FFmpeg) to download and potentially convert media.
+### Start the app in development mode (hot-code reloading, error reporting, etc.)
+```bash
+quasar dev
+```
+
+### Lint the files
+```bash
+npm run lint
+```
+
+### Build the app for production
+```bash
+quasar build
+```
+
+### Customize the configuration
+See [Configuring quasar.conf.js](https://quasar.dev/quasar-cli/quasar-conf-js).

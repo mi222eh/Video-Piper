@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
 import * as path from 'path';
 import {CommandArguments, CurrentWorkingDirectory, FinishedListener, CommandInputList, CommandOutput, CommandInput} from './types/ExecutionTypes';
 
@@ -10,12 +10,10 @@ interface ExecuteOptions extends FinishedListener, CurrentWorkingDirectory, Comm
 
 function execute({ cwd, args, finishedListener }: ExecuteOptions) {
     console.log({ cwd, args });
-    return execFile(
-        getPath(),
-        [...args],
+    return exec(`"${getPath()}" ${[...args].join(' ')}`,
         {
             cwd: cwd,
-            maxBuffer: 1024 * 1024 * 10
+            maxBuffer: 1024 * 1024 * 2
         },
         finishedListener
     );
@@ -37,7 +35,7 @@ function combine({
         throw new Error('cwd required');
     }
     const [input1, input2] = inputs;
-    const args = ['-i', input1, '-i', input2, '-shortest', `${output}`];
+    const args = ['-i', input1, '-i', input2, `${output}`];
     return execute({ cwd, args, finishedListener });
 }
 

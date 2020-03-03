@@ -8,7 +8,6 @@
     "module": "esnext",
     "moduleResolution": "node",
     "baseUrl": ".",
-    "allowSyntheticDefaultImports": true,
     "types": [
       "quasar"
     ]

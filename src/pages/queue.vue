@@ -15,12 +15,12 @@
           expand-separator
           icon="list"
           :label="group.name"
-          :caption="group.videos.length.toString()"
+          :caption="group.videos.length.toString() + ' Entries'"
         >
           <q-card>
             <q-list bordered padding separator>
               <q-virtual-scroll style="max-height: 20rem;" :items="group.videos" separator>
-                <template v-slot="{ item:task, index }">
+                <template v-slot="{ item:task }">
                   <q-item>
                     <q-item-section avatar>
                       <q-avatar>
@@ -34,14 +34,14 @@
                         }}
                       </q-item-label>
                       <q-item-label>
-                        <q-linear-progress v-if="!task.inProgress" :value="0" />
-                        <q-linear-progress v-else-if="task.percentage == 404" indeterminate />
+                        <q-linear-progress v-if="task.percentage == 404" indeterminate />
                         <q-linear-progress
                           v-else-if="task.percentage > 0"
                           :value="task.percentage"
                         />
 
                         <q-linear-progress v-else-if="task.inProgress" query />
+                        <!-- <q-linear-progress v-else-if="task.isFinished" :value="0" /> -->
                         <q-linear-progress v-else :value="0" />
                       </q-item-label>
                       <q-item-label caption>
@@ -52,9 +52,19 @@
                     </q-item-section>
                     <q-item-section top side>
                       <div class="text-grey-8 q-gutter-xs">
-                        <!-- STOP BUTTON -->
+                        <!-- START/STOP BUTTONS -->
                         <q-btn
-                          v-if="task.inProgress"
+                          v-if="task.percentage >= 1"
+                          flat
+                          round
+                          disable=""
+                          size="12px"
+                          color="primary"
+                          icon="play_arrow"
+                          class="inline"
+                        />
+                        <q-btn
+                          v-else-if="task.inProgress"
                           flat
                           round
                           size="12px"
@@ -63,9 +73,8 @@
                           class="inline"
                           @click="stopTask(task.info.id)"
                         />
-                        <!-- START BUTTON -->
                         <q-btn
-                          v-else-if="task.staus !== 'done'"
+                          v-else
                           flat
                           round
                           size="12px"
