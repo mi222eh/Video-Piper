@@ -10,6 +10,7 @@ const i18n = new VueI18n({
   messages
 })
 
+// @ts-ignore
 export default ({ app }) => {
   // Set i18n instance on app
   app.i18n = i18n

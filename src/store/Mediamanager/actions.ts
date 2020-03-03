@@ -3,8 +3,11 @@ import * as youtubeDl from '../modules/youtubedl';
 import ffmpeg from '../modules/ffmpeg';
 import { formatDuration, TrackProgress } from '../modules/helpers';
 
+// @ts-ignore
 import sanitizeName from 'sanitize-filename';
+// @ts-ignore
 import fs from 'fs-extra';
+// @ts-ignore
 import path from 'path';
 import terminate from 'terminate';
 import { VideoInfo } from '../types/Video/VideoInfo';
