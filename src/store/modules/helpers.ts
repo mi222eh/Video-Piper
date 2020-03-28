@@ -1,5 +1,5 @@
 import * as fs from 'fs-extra';
-export function formatDuration(ms:number) {
+export function formatDuration(ms: number) {
     if (!ms) return;
     if (ms < 0) ms = -ms;
     const time = {
@@ -15,23 +15,25 @@ export function formatDuration(ms:number) {
         .join(', ');
 }
 
-interface TrackProgressOptions{
+interface TrackProgressOptions {
     file: string,
-    size?:number,
-    totalSize:number,
-    listener(percentage:number):void
+    size?: number,
+    totalSize: number,
+    listener(percentage: number): void
 }
-export function TrackProgress({ file, size = 0, totalSize, listener }:TrackProgressOptions) {
+export function TrackProgress({ file, size = 0, totalSize, listener }: TrackProgressOptions) {
     const intId = setInterval(async () => {
-        console.log('TRACKER');
-        if (typeof totalSize === 'number' && totalSize > 0) {
-            const fileInfo = await fs.stat(file);
-            const percentage = (fileInfo.size + size) / totalSize;
-            console.log(percentage);
-            listener(percentage);
-        } else {
-            console.log(404);
-            listener(404);
+        try {
+            if (typeof totalSize === 'number' && totalSize > 0) {
+                const fileInfo = await fs.stat(file);
+                const percentage = (fileInfo.size + size) / totalSize;
+                listener(percentage);
+            } else {
+                listener(404);
+            }
+        }
+        catch{
+
         }
     }, 400);
 

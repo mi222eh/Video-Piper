@@ -1,7 +1,7 @@
 import { VideoPlaylist } from "../types/VideoPlaylist";
 import { VideoInfo } from "../types/Video/VideoInfo";
 import { PlaylistTask, PlaylistContext, PlaylistMutators } from "./playlistTypes";
-import { VideoTaskInfo } from "../Mediamanager/mediaManagerTypes";
+import { VideoTaskInfo, VideoTaskStatus, VideoTaskProgress } from "../Mediamanager/mediaManagerTypes";
 import { VideoFormat } from "../types/Video/VideoFormat";
 
 export async function addPlaylistItems(context: PlaylistContext, playlist: PlaylistTask) {
@@ -29,6 +29,7 @@ export async function addPlaylistItems(context: PlaylistContext, playlist: Playl
                 format_note: 'Playlist',
             }
             const videotask: VideoTaskInfo = {
+                progressStatus: VideoTaskProgress.notStarted,
                 URL: entry.url,
                 actionHistory: [],
                 chosenFormat: format,

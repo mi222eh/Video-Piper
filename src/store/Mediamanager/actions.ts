@@ -12,6 +12,7 @@ import path from 'path';
 import terminate from 'terminate';
 import { VideoInfo } from '../types/Video/VideoInfo';
 import { ChildProcess } from 'child_process';
+import { logErrorTexts } from '../modules/logger/logger';
 
 const _ProcessBank : {[key:string]: ChildProcess | null | undefined} = {};
 
@@ -221,6 +222,12 @@ export async function getVideoInfo(context: Context, url: string) {
         try {
             json = await context.dispatch('getVideoFormatInfo', { url });
         } catch (error) {
+            if(error instanceof Error){
+                logErrorTexts([
+                    `ERROR ${error.name}: ${error.message}`,
+                    `${error.stack}`
+                ])
+            }
             throw new Error('Video couldn\'t be loaded');
         }
     }
@@ -231,9 +238,15 @@ export async function getPlaylistInfo(context:Context, url: string) {
     const json: string = await new Promise((resolve, reject) => {
         youtubeDl.getPlaylistInfo({
             url,
-            finishedListener(err, out) {
-                if (err) {
-                    reject(err);
+            finishedListener(error, out) {
+                if (error) {
+                    if(error instanceof Error){
+                        logErrorTexts([
+                            `ERROR ${error.name}: ${error.message}`,
+                            `${error.stack}`
+                        ])
+                    }
+                    reject(error);
                     return;
                 }
                 resolve(out);
@@ -306,6 +319,7 @@ export async function performVideoTask(context: Context, task: VideoTask) {
             status: 'downloading'
         });
         const formats = task.info.chosenFormat.format_id.split('+');
+        console.log("formats", {formats});
         for (let i = 0; i < formats.length; i++) {
             await context.dispatch('downloadMedia', task);
         }
@@ -352,6 +366,12 @@ export async function performVideoTask(context: Context, task: VideoTask) {
     } catch (error) {
         if (task.isStopped) {
             return;
+        }
+        if(error instanceof Error){
+            logErrorTexts([
+                `ERROR ${error.name}: ${error.message}`,
+                `${error.stack}`
+            ])
         }
         context.commit('TASKSetStatus', {
             id: task.info.id,

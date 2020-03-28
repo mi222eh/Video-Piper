@@ -23,6 +23,15 @@ export enum VideoTaskStatus{
     done = 'done'
 }
 
+export enum VideoTaskProgress{
+    downloaded = 0,
+    merged = 1,
+    converted = 2,
+    filtered = 3,
+    finished = 4,
+    notStarted = 5
+}
+
 export interface VideoTask{
     info: VideoTaskInfo,
     process: ChildProcess | null,
@@ -35,6 +44,7 @@ export interface VideoTask{
 }
 
 export interface VideoTaskInfo{
+    progressStatus: VideoTaskProgress,
     chosenFormat: VideoFormat,
     videoInfo: VideoInfo,
     folder: string,

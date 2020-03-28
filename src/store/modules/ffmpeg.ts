@@ -2,9 +2,7 @@ import { execFile, exec } from 'child_process';
 import * as path from 'path';
 import {CommandArguments, CurrentWorkingDirectory, FinishedListener, CommandInputList, CommandOutput, CommandInput} from './types/ExecutionTypes';
 
-const getPath = () => path.join(__statics, 'bin', 'ffmpeg.exe');
-
-
+const getPath = () => path.resolve(path.join('.', 'AppData' , 'lib','ffmpeg', 'ffmpeg.exe'));
 
 interface ExecuteOptions extends FinishedListener, CurrentWorkingDirectory, CommandArguments{}
 

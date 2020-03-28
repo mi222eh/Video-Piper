@@ -170,7 +170,7 @@ import '../store/Mediamanager/doc/MediaManagerDoc';
 import Vue from 'vue';
 import { VideoInfo } from '../store/types/Video/VideoInfo';
 import { VideoFormat } from '../store/types/Video/VideoFormat';
-import { VideoTaskInfo } from '../store/Mediamanager/mediaManagerTypes';
+import { VideoTaskInfo, VideoTaskProgress } from '../store/Mediamanager/mediaManagerTypes';
 
 interface Data {
     VideoUrl: string;
@@ -386,6 +386,7 @@ export default Vue.extend({
                     return;
                 }
                 const task:VideoTaskInfo = {
+                    progressStatus: VideoTaskProgress.notStarted,
                     tempFileNames: [],
                     tempFolder: '',
                     actionHistory:[],
