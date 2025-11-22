@@ -57,7 +57,7 @@ function App() {
           console.log(`child process exited with signal ${payload.signal}`);
           payload.code === 0 ? res(null) : rej();
         });
-        const child = await cmd.spawn();
+        await cmd.spawn();
 
       })
     } finally {
@@ -92,7 +92,7 @@ function AppContainer(props: { children: ReactNode }) {
 
   const sytemDark = window.matchMedia("(prefers-color-scheme: dark)").matches
 
-  const [theme, setTheme] = useState<Theme>(
+  const [theme] = useState<Theme>(
     () => localStorage.getItem("theme") as Theme || (sytemDark ? "dark" : "light")
   )
 
