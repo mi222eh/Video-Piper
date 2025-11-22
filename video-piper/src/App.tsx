@@ -43,7 +43,13 @@ function App() {
     setIsLoading(true);
     try {
       await new Promise(async (res, rej) => {
-        const cmd = Command.create("yt", ["-t", "mp3", link], {
+
+        const parsedLink = new URL(link);
+        const linkToUse = new URL(parsedLink.origin);
+        linkToUse.pathname = parsedLink.pathname;
+        linkToUse.searchParams.set("v", parsedLink.searchParams.get("v") || "");
+
+        const cmd = Command.create("yt", ["-t", "mp3", linkToUse.toString()], {
           cwd: savePath,
         })
         cmd.stdout.on("data", (line) => {
