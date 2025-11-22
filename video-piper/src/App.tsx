@@ -7,10 +7,22 @@ import { open } from "@tauri-apps/plugin-dialog"
 import { readText } from "@tauri-apps/plugin-clipboard-manager"
 import { Command, } from "@tauri-apps/plugin-shell"
 
+
+const useSaveLocationLocalStorage = (key: string, initialValue: string) => {
+  const [value, setValue] = useState<string>(() => {
+    const storedValue = localStorage.getItem(key);
+    return storedValue !== null ? storedValue : initialValue;
+  });
+  useEffect(() => {
+    localStorage.setItem(key, value);
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
 function App() {
 
   const [link, setLink] = useState<string>("");
-  const [savePath, setSavePath] = useState<string>("");
+  const [savePath, setSavePath] = useSaveLocationLocalStorage("savePath", "");
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   async function handleBrowse() {
@@ -29,11 +41,28 @@ function App() {
   async function handleDownload() {
     console.log("Downloading...");
     setIsLoading(true);
-    const cmd = Command.create("yt-dlp", ["-t", "mp3", link], {
-      cwd: savePath,
-    })
-    const child = await cmd.execute();
-    setIsLoading(false);
+    try {
+      await new Promise(async (res, rej) => {
+        const cmd = Command.create("yt", ["-t", "mp3", link], {
+          cwd: savePath,
+        })
+        cmd.stdout.on("data", (line) => {
+          console.log(`stdout: ${line}`);
+        });
+        cmd.stderr.on("data", (line) => {
+          console.log(`stderr: ${line}`);
+        });
+        cmd.on("close", (payload) => {
+          console.log(`child process exited with code ${payload.code}`);
+          console.log(`child process exited with signal ${payload.signal}`);
+          payload.code === 0 ? res(null) : rej();
+        });
+        const child = await cmd.spawn();
+
+      })
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -41,12 +70,12 @@ function App() {
       <div className="flex flex-col items-center justify-center gap-4 p-4">
         <Label className="text-nowrap grow flex flex-row">
           <p>Youtube Länk:</p>
-          <Input value={link} type="text" className="grow w-xl" />
+          <Input value={link} type="text" className="grow w-xl" onChange={e => setLink(e.target.value)} />
           <Button className="ml-2" onClick={handlePaste}>Klistra in</Button>
         </Label>
         <Label className="text-nowrap grow flex flex-row">
           <p>Spara till:</p>
-          <Input disabled value={savePath} className="grow w-xl" />
+          <Input disabled value={savePath} readOnly className="grow w-xl" />
           <Button className="ml-2" onClick={handleBrowse}>Bläddra</Button>
         </Label>
         <Button className="mt-4" onClick={handleDownload} disabled={isLoading}>

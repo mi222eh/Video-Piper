@@ -12,8 +12,26 @@
     "clipboard-manager:default",
     "clipboard-manager:allow-read-text",
     "shell:default",
-    "shell:allow-execute",
     "shell:allow-open",
-    "shell:deny-spawn"
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "yt",
+          "cmd": "yt-dlp",
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "yt",
+          "cmd": "yt-dlp",
+          "args": true
+        }
+      ]
+    }
   ]
 }
