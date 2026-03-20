@@ -24,6 +24,8 @@ function App() {
   const [link, setLink] = useState<string>("");
   const [savePath, setSavePath] = useSaveLocationLocalStorage("savePath", "");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [updateStatus, setUpdateStatus] = useState<string>("");
 
   async function handleBrowse() {
     const dir = await open({
@@ -71,6 +73,40 @@ function App() {
     }
   }
 
+  async function handleUpdate() {
+    setIsUpdating(true);
+    setUpdateStatus("Updating yt-dlp...");
+    try {
+      await new Promise<void>((res, rej) => {
+        const cmd = Command.create("winget-update", ["upgrade", "yt-dlp"]);
+        cmd.stdout.on("data", (line) => {
+          console.log(`stdout: ${line}`);
+        });
+        cmd.stderr.on("data", (line) => {
+          console.log(`stderr: ${line}`);
+        });
+        cmd.on("close", (payload) => {
+          console.log(`winget exited with code ${payload.code}`);
+          if (payload.code === 0) {
+            setUpdateStatus("yt-dlp updated successfully!");
+            res();
+          } else {
+            setUpdateStatus(`Update failed (exit code ${payload.code})`);
+            rej(new Error(`winget exited with code ${payload.code}`));
+          }
+        });
+        cmd.spawn().catch((err) => {
+          setUpdateStatus(`Update failed: ${err}`);
+          rej(err);
+        });
+      });
+    } catch {
+      // Status already set in the promise handlers
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   return (
     <AppContainer>
       <div className="flex flex-col items-center justify-center gap-4 p-4">
@@ -87,6 +123,12 @@ function App() {
         <Button className="mt-4" onClick={handleDownload} disabled={isLoading}>
           {isLoading ? "Laddar ner..." : "Ladda ner MP3"}
         </Button>
+        <div className="flex flex-col items-center gap-1">
+          <Button onClick={handleUpdate} disabled={isUpdating || isLoading}>
+            {isUpdating ? "Updating..." : "update"}
+          </Button>
+          {updateStatus && <p className="text-sm">{updateStatus}</p>}
+        </div>
       </div>
     </AppContainer>
   );
