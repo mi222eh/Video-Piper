@@ -24,6 +24,8 @@ function App() {
   const [link, setLink] = useState<string>("");
   const [savePath, setSavePath] = useSaveLocationLocalStorage("savePath", "");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
   async function handleBrowse() {
     const dir = await open({
@@ -71,6 +73,43 @@ function App() {
     }
   }
 
+  async function handleUpdateYtDlp() {
+    setIsUpdating(true);
+    setUpdateStatus("Updating yt-dlp…");
+    let output = "";
+    try {
+      await new Promise<void>(async (res, rej) => {
+        const cmd = Command.create("winget-update-yt-dlp", ["upgrade", "yt-dlp"]);
+        cmd.stdout.on("data", (line) => {
+          output += line + "\n";
+        });
+        cmd.stderr.on("data", (line) => {
+          output += line + "\n";
+        });
+        cmd.on("close", (payload) => {
+          if (payload.code === 0) {
+            setUpdateStatus("yt-dlp updated successfully!");
+            res();
+          } else {
+            const detail = output ? `: ${output.trim()}` : ".";
+            setUpdateStatus(`Update failed (exit code ${payload.code})${detail}`);
+            rej();
+          }
+        });
+        try {
+          await cmd.spawn();
+        } catch (err) {
+          setUpdateStatus(`Failed to start winget: ${err instanceof Error ? err.message : String(err)}`);
+          rej(err);
+        }
+      });
+    } catch {
+      // Status already set in the appropriate handler above.
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   return (
     <AppContainer>
       <div className="flex flex-col items-center justify-center gap-4 p-4">
@@ -87,6 +126,12 @@ function App() {
         <Button className="mt-4" onClick={handleDownload} disabled={isLoading}>
           {isLoading ? "Laddar ner..." : "Ladda ner MP3"}
         </Button>
+        <Button className="mt-2" variant="outline" onClick={handleUpdateYtDlp} disabled={isUpdating}>
+          {isUpdating ? "Updating yt-dlp…" : "Update yt-dlp"}
+        </Button>
+        {updateStatus && (
+          <p className="text-sm mt-1 text-muted-foreground">{updateStatus}</p>
+        )}
       </div>
     </AppContainer>
   );
