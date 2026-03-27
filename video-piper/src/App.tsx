@@ -36,6 +36,7 @@ function App() {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
   const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState<boolean>(false);
   const [updateStatus, setUpdateStatus] = useState<YtDlpUpdateStatus | null>(null);
+  const [updateNotice, setUpdateNotice] = useState<string>("");
 
   const isBusy = isLoading || isCheckingUpdate || isUpdatingYtDlp;
 
@@ -84,12 +85,15 @@ function App() {
       cmd.on("close", (payload: { code: number | null }) => {
         resolve({ code: payload.code, stdout, stderr });
       });
-      cmd.spawn().catch(reject);
+      cmd.spawn().catch((error) => {
+        reject(new Error(`Failed to run yt command (${args.join(" ")}): ${String(error)}`));
+      });
     });
   }
 
   async function checkForUpdates() {
     setIsCheckingUpdate(true);
+    setUpdateNotice("");
     try {
       const [versionResult, latestReleaseResponse] = await Promise.all([
         runYtCommand(["--version"]),
@@ -101,35 +105,51 @@ function App() {
       ]);
 
       if (versionResult.code !== 0) {
+        setUpdateNotice("Kunde inte läsa installerad yt-dlp version.");
         return;
       }
 
       const currentVersion = getVersion(versionResult.stdout || versionResult.stderr);
       if (!currentVersion || !latestReleaseResponse.ok) {
+        setUpdateNotice("Kunde inte kontrollera senaste yt-dlp version just nu.");
         return;
       }
 
-      const latestRelease = await latestReleaseResponse.json() as { tag_name?: string };
-      const latestVersion = latestRelease.tag_name?.replace(/^v/i, "") ?? "";
+      const latestReleaseJson = await latestReleaseResponse.json();
+      const latestVersion = (
+        typeof latestReleaseJson === "object" &&
+        latestReleaseJson !== null &&
+        "tag_name" in latestReleaseJson &&
+        typeof latestReleaseJson.tag_name === "string"
+          ? latestReleaseJson.tag_name
+          : ""
+      ).replace(/^v/i, "");
       if (!latestVersion) {
+        setUpdateNotice("Kunde inte kontrollera senaste yt-dlp version just nu.");
         return;
       }
 
       if (compareVersions(currentVersion, latestVersion) < 0) {
         setUpdateStatus({ currentVersion, latestVersion });
+        setUpdateNotice("Ny yt-dlp version hittad.");
       } else {
         setUpdateStatus(null);
+        setUpdateNotice("Du har redan senaste yt-dlp versionen.");
       }
+    } catch (error) {
+      console.error(error);
+      setUpdateNotice("Kunde inte kontrollera uppdateringar just nu.");
     } finally {
       setIsCheckingUpdate(false);
     }
   }
 
   async function maybeCheckForUpdatesAfterFailure() {
-    const lastCheckedValue = Number.parseInt(localStorage.getItem(LAST_AUTO_UPDATE_CHECK_KEY) ?? "", 10);
+    const rawLastCheckedValue = localStorage.getItem(LAST_AUTO_UPDATE_CHECK_KEY);
+    const lastCheckedValue = rawLastCheckedValue ? Number.parseInt(rawLastCheckedValue, 10) : Number.NaN;
     const now = Date.now();
 
-    if (Number.isFinite(lastCheckedValue) && now - lastCheckedValue < AUTO_UPDATE_CHECK_COOLDOWN_MS) {
+    if (!Number.isNaN(lastCheckedValue) && now - lastCheckedValue < AUTO_UPDATE_CHECK_COOLDOWN_MS) {
       return;
     }
 
@@ -139,11 +159,18 @@ function App() {
 
   async function handleUpdateYtDlp() {
     setIsUpdatingYtDlp(true);
+    setUpdateNotice("");
     try {
       const updateResult = await runYtCommand(["-U"]);
       if (updateResult.code === 0) {
+        setUpdateNotice("yt-dlp uppdaterades.");
         await checkForUpdates();
+      } else {
+        setUpdateNotice("Kunde inte uppdatera yt-dlp.");
       }
+    } catch (error) {
+      console.error(error);
+      setUpdateNotice("Kunde inte uppdatera yt-dlp.");
     } finally {
       setIsUpdatingYtDlp(false);
     }
@@ -214,6 +241,11 @@ function App() {
             {isCheckingUpdate ? "Kollar..." : "Kolla uppdateringar"}
           </Button>
         </div>
+        <p id="update-status" className="text-sm text-muted-foreground min-h-5" aria-live="polite">
+          {isBusy
+            ? `${updateNotice ? `${updateNotice} ` : ""}Vänta tills aktuell operation är klar.`
+            : updateNotice}
+        </p>
       </div>
     </AppContainer>
   );
