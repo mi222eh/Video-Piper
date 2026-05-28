@@ -20,6 +20,11 @@
           "name": "yt",
           "cmd": "yt-dlp",
           "args": true
+        },
+        {
+          "name": "winget",
+          "cmd": "winget",
+          "args": true
         }
       ]
     },
@@ -29,6 +34,11 @@
         {
           "name": "yt",
           "cmd": "yt-dlp",
+          "args": true
+        },
+        {
+          "name": "winget",
+          "cmd": "winget",
           "args": true
         }
       ]
