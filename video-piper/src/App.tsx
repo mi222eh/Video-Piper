@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { Label } from "./components/ui/label";
 import { Input } from "./components/ui/input";
@@ -37,6 +37,11 @@ const detectNoUpdates = (output: string) => includesAny(output, [
   "inga nyare paketversioner är tillgängliga",
 ]);
 
+const formatError = (value: string) => {
+  const rows = value.trim().split("\n").map(row => row.trim()).filter(Boolean);
+  return rows[rows.length - 1] ?? "";
+};
+
 function App() {
 
   const [link, setLink] = useState<string>("");
@@ -49,7 +54,7 @@ function App() {
   const [ytDlpStatusMessage, setYtDlpStatusMessage] = useState<string>("");
   const [ignoreMissingYtDlp, setIgnoreMissingYtDlp] = useState<boolean>(false);
 
-  async function checkYtDlpStatus() {
+  const checkYtDlpStatus = useCallback(async () => {
     setIsCheckingYtDlp(true);
     setYtDlpStatusMessage("");
 
@@ -63,13 +68,18 @@ function App() {
       ]).execute();
 
       const listOutput = `${listResult.stdout}\n${listResult.stderr}`.toLowerCase();
-      const missingPackage = listResult.code !== 0 || detectMissingPackage(listOutput);
+      const missingPackage = detectMissingPackage(listOutput);
 
       if (missingPackage) {
         setIsYtDlpMissing(true);
         setIsYtDlpUpdateAvailable(false);
         setYtDlpStatusMessage("yt-dlp hittades inte via winget. Installera yt-dlp för att använda appen.");
         return;
+      }
+
+      if (listResult.code !== 0) {
+        const wingetError = formatError(`${listResult.stdout}\n${listResult.stderr}`);
+        throw new Error(wingetError || "winget misslyckades vid yt-dlp-kontroll.");
       }
 
       setIsYtDlpMissing(false);
@@ -84,25 +94,33 @@ function App() {
       ]).execute();
 
       const upgradeOutput = `${upgradeResult.stdout}\n${upgradeResult.stderr}`.toLowerCase();
-      const hasUpdate = !detectNoUpdates(upgradeOutput) && upgradeOutput.includes("yt-dlp");
+      const upgradeCheckFailed = upgradeResult.code !== 0;
+      const hasUpdate = !upgradeCheckFailed
+        && !detectNoUpdates(upgradeOutput)
+        && upgradeOutput.includes(YT_DLP_WINGET_ID.toLowerCase());
 
       setIsYtDlpUpdateAvailable(hasUpdate);
+      if (upgradeCheckFailed) {
+        const wingetError = formatError(`${upgradeResult.stdout}\n${upgradeResult.stderr}`);
+        setYtDlpStatusMessage(`Kunde inte kontrollera uppdateringar för yt-dlp. ${wingetError}`);
+      }
 
-      if (!hasUpdate) {
+      if (!hasUpdate && !upgradeCheckFailed) {
         setYtDlpStatusMessage("");
       }
-    } catch {
-      setYtDlpStatusMessage("Kunde inte kontrollera yt-dlp via winget.");
+    } catch (error) {
+      const details = error instanceof Error ? error.message : "";
+      setYtDlpStatusMessage(`Kunde inte kontrollera yt-dlp via winget. ${details || "Kontrollera att winget är installerat och tillgängligt."}`);
       setIsYtDlpMissing(false);
       setIsYtDlpUpdateAvailable(false);
     } finally {
       setIsCheckingYtDlp(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void checkYtDlpStatus();
-  }, []);
+  }, [checkYtDlpStatus]);
 
   async function handleBrowse() {
     if (controlsDisabled) return;
@@ -134,17 +152,22 @@ function App() {
       ]).execute();
 
       if (result.code !== 0) {
-        setYtDlpStatusMessage("Kunde inte uppdatera yt-dlp via winget.");
+        const wingetError = formatError(`${result.stdout}\n${result.stderr}`);
+        setYtDlpStatusMessage(`Kunde inte uppdatera yt-dlp via winget. ${wingetError || "Kontrollera rättigheter och winget-inställningar."}`);
       }
-    } catch {
-      setYtDlpStatusMessage("Kunde inte uppdatera yt-dlp via winget.");
+    } catch (error) {
+      const details = error instanceof Error ? error.message : "";
+      setYtDlpStatusMessage(`Kunde inte uppdatera yt-dlp via winget. ${details || "Kontrollera att winget är installerat och tillgängligt."}`);
     } finally {
       setIsUpdatingYtDlp(false);
       await checkYtDlpStatus();
     }
   }
 
-  const controlsDisabled = isLoading || isUpdatingYtDlp || isCheckingYtDlp || (isYtDlpMissing && !ignoreMissingYtDlp);
+  const controlsDisabled = useMemo(
+    () => isLoading || isUpdatingYtDlp || isCheckingYtDlp || (isYtDlpMissing && !ignoreMissingYtDlp),
+    [ignoreMissingYtDlp, isCheckingYtDlp, isLoading, isUpdatingYtDlp, isYtDlpMissing]
+  );
 
   async function handleDownload() {
     if (controlsDisabled) return;
