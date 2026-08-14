@@ -1,16 +1,35 @@
 {
+  "name": "video-piper",
+  "version": "0.1.0",
+  "exports": "./server.ts",
+  "exclude": [
+    "node_modules",
+    "src"
+  ],
+  "desktop": {
+    "app": {
+      "name": "Video Piper",
+      "identifier": "com.videopiper.app"
+    },
+    "backend": "webview",
+    "output": {
+      "windows": "./bin/video-piper.exe",
+      "macos": "./bin/Video Piper.app",
+      "linux": "./bin/video-piper"
+    }
+  },
   "tasks": {
-    "dev": "pnpm dev",
     "build": "pnpm build",
-    "serve": "deno run --allow-net --allow-read --allow-run server.ts",
-    "desktop": "deno desktop --allow-net --allow-read --allow-run server.ts",
-    "compile": "deno compile --allow-net --allow-read --allow-run --output bin/video-piper server.ts"
+    "desktop": "deno desktop --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
+    "desktop:hmr": "deno desktop --hmr --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
+    "serve": "deno run --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
+    "compile": "deno desktop --node-modules-dir=none --include dist --output ./bin/video-piper.exe --allow-net --allow-read --allow-run --allow-env server.ts"
   },
   "imports": {
+    "@std/http": "jsr:@std/http@^1.1.3",
     "@std/path": "jsr:@std/path@^1.0.8"
   },
   "compilerOptions": {
-    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"],
-    "jsx": "react-jsx"
+    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"]
   }
 }

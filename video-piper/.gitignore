@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Deno Desktop & Build Outputs
+bin
+server
+.deno-desktop*

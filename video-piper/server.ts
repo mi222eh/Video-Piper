@@ -1,8 +1,18 @@
 // Video-Piper Deno Backend & Desktop Host
-
-import { extname, join } from "jsr:@std/path";
+import { serveDir, serveFile } from "jsr:@std/http/file-server";
 
 const PORT = 1420;
+
+// Configure desktop window if running under `deno desktop`
+if ("BrowserWindow" in Deno) {
+  // @ts-ignore: Deno.BrowserWindow is available under deno desktop
+  new Deno.BrowserWindow({
+    title: "Video Piper",
+    width: 680,
+    height: 560,
+    resizable: true,
+  });
+}
 
 // Cross-platform folder picker using native OS dialog utilities
 async function pickFolder(): Promise<string | null> {
@@ -16,8 +26,7 @@ async function pickFolder(): Promise<string | null> {
           stderr: "null",
         }).output();
         if (res.code === 0) {
-          const path = new TextDecoder().decode(res.stdout).trim();
-          return path || null;
+          return new TextDecoder().decode(res.stdout).trim() || null;
         }
       } catch {
         const res = await new Deno.Command("kdialog", {
@@ -26,8 +35,7 @@ async function pickFolder(): Promise<string | null> {
           stderr: "null",
         }).output();
         if (res.code === 0) {
-          const path = new TextDecoder().decode(res.stdout).trim();
-          return path || null;
+          return new TextDecoder().decode(res.stdout).trim() || null;
         }
       }
     } else if (os === "windows") {
@@ -99,20 +107,6 @@ async function checkTools() {
   return { ytDlp, ytDlpVersion, ffmpeg };
 }
 
-// MIME types for static assets
-const MIME_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
-
 // HTTP Request Handler
 async function handleHttp(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -180,8 +174,9 @@ async function handleHttp(req: Request): Promise<Response> {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
 
-                // Parse download progress
-                const match = trimmed.match(/\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/);
+                const match = trimmed.match(
+                  /\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+\/s)\s+ETA\s+([\d:]+)/
+                );
                 if (match) {
                   send({
                     status: "downloading",
@@ -206,7 +201,7 @@ async function handleHttp(req: Request): Promise<Response> {
             }
           };
 
-          const [stdoutStatus, stderrStatus, exitStatus] = await Promise.all([
+          const [, , exitStatus] = await Promise.all([
             readStream(process.stdout),
             readStream(process.stderr, false),
             process.status,
@@ -234,37 +229,21 @@ async function handleHttp(req: Request): Promise<Response> {
     });
   }
 
-  // Serve static UI assets from ./dist
-  const distDir = join(Deno.cwd(), "dist");
-  let filePath = join(distDir, url.pathname === "/" ? "index.html" : url.pathname);
-
+  // Serve static UI assets from ./dist with SPA fallback using Deno standard library
   try {
-    const file = await Deno.open(filePath, { read: true });
-    const stat = await file.stat();
-    if (stat.isDirectory) {
-      filePath = join(filePath, "index.html");
-    }
-    const ext = extname(filePath);
-    const contentType = MIME_TYPES[ext] || "application/octet-stream";
-
-    return new Response(file.readable, {
-      headers: {
-        "Content-Type": contentType,
-      },
+    const res = await serveDir(req, {
+      fsRoot: "dist",
+      quiet: true,
     });
-  } catch {
-    // SPA fallback
-    try {
-      const indexFile = await Deno.open(join(distDir, "index.html"), { read: true });
-      return new Response(indexFile.readable, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    } catch {
-      return new Response("Frontend not built. Run 'pnpm build' or 'deno task build' first.", { status: 404 });
+    if (res.status === 404) {
+      return await serveFile(req, "dist/index.html");
     }
+    return res;
+  } catch {
+    return new Response("Frontend not built. Run 'deno task build' first.", { status: 404 });
   }
 }
 
-// Start Server
-console.log(`Video-Piper Deno server running at http://localhost:${PORT}`);
+// Start Server / Deno Desktop Host
+console.log(`Video-Piper host running at http://localhost:${PORT}`);
 Deno.serve({ port: PORT }, handleHttp);

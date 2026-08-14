@@ -9,14 +9,34 @@
       "runtimeExecutable": "deno",
       "runtimeArgs": [
         "desktop",
+        "--node-modules-dir=none",
         "--allow-net",
         "--allow-read",
         "--allow-run",
+        "--allow-env",
         "--inspect-wait",
         "server.ts"
       ],
       "attachSimplePort": 9229,
       "preLaunchTask": "Build Frontend",
+      "outputCapture": "std"
+    },
+    {
+      "name": "Launch Deno Desktop App (HMR)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/video-piper",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "desktop",
+        "--hmr",
+        "--node-modules-dir=none",
+        "--allow-net",
+        "--allow-read",
+        "--allow-run",
+        "--allow-env",
+        "server.ts"
+      ],
       "outputCapture": "std"
     },
     {
@@ -30,12 +50,20 @@
         "--allow-net",
         "--allow-read",
         "--allow-run",
+        "--allow-env",
         "--inspect-wait",
         "server.ts"
       ],
       "attachSimplePort": 9229,
       "preLaunchTask": "Build Frontend",
       "outputCapture": "std"
+    },
+    {
+      "name": "Attach to Deno",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true
     }
   ]
 }
