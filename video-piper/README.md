@@ -1,7 +1,7 @@
-# Tauri + React + Typescript
+# Video-Piper (Deno Desktop + React + TypeScript)
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Video-Piper is a desktop application for downloading and converting video/audio to MP3 using Deno and `yt-dlp`.
 
 ## Recommended IDE Setup
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [VS Code](https://code.visualstudio.com/) + [Deno Extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) + [Tailwind CSS IntelliSense](https://marketplace.visualstudio.com/items?itemName=bradlc.vscode-tailwindcss)
