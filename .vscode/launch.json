@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Deno Desktop App",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/video-piper",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "desktop",
+        "--allow-net",
+        "--allow-read",
+        "--allow-run",
+        "--inspect-wait",
+        "server.ts"
+      ],
+      "attachSimplePort": 9229,
+      "preLaunchTask": "Build Frontend",
+      "outputCapture": "std"
+    },
+    {
+      "name": "Launch Deno Server & Debug",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/video-piper",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--allow-net",
+        "--allow-read",
+        "--allow-run",
+        "--inspect-wait",
+        "server.ts"
+      ],
+      "attachSimplePort": 9229,
+      "preLaunchTask": "Build Frontend",
+      "outputCapture": "std"
+    }
+  ]
+}
