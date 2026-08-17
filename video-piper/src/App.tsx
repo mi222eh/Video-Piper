@@ -76,7 +76,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">Video Piper</h1>
-              <p className="text-xs text-muted-foreground">Deno Edition • Snabb MP3-konverterare</p>
+              <p className="text-xs text-muted-foreground">Snabb MP3-konverterare</p>
             </div>
           </div>
           {systemStatus?.ytDlp && (

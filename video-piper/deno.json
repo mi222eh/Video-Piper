@@ -20,10 +20,11 @@
   },
   "tasks": {
     "build": "pnpm build",
-    "desktop": "deno desktop --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
-    "desktop:hmr": "deno desktop --hmr --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
-    "serve": "deno run --node-modules-dir=none --allow-net --allow-read --allow-run --allow-env server.ts",
-    "compile": "deno desktop --node-modules-dir=none --include dist --output ./bin/video-piper.exe --allow-net --allow-read --allow-run --allow-env server.ts"
+    "clean": "deno eval \"try { Deno.removeSync('./bin', { recursive: true }); } catch {}\"",
+    "desktop": "deno desktop --node-modules-dir=none --allow-net --allow-read --allow-write --allow-run --allow-env --allow-sys server.ts",
+    "desktop:hmr": "deno desktop --hmr --node-modules-dir=none --allow-net --allow-read --allow-write --allow-run --allow-env --allow-sys server.ts",
+    "serve": "deno run --node-modules-dir=none --allow-net --allow-read --allow-write --allow-run --allow-env --allow-sys server.ts",
+    "compile": "deno desktop --node-modules-dir=none --include dist --output ./bin/video-piper.exe --allow-net --allow-read --allow-write --allow-run --allow-env --allow-sys server.ts"
   },
   "imports": {
     "@std/http": "jsr:@std/http@^1.1.3",
