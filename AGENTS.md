@@ -61,7 +61,7 @@ Video-Piper/
 
 | Component | Technology | Version / Details |
 |:---|:---|:---|
-| **UI Framework** | Uno Platform (WinUI 3) | 6.7.x |
+| **UI Framework** | Uno Platform (WinUI 3 + C# Markup) | 6.6.x |
 | **Runtime** | .NET | 10.0 |
 | **Language** | C# | 13 |
 | **Windows SDK** | WinAppSDK | 1.7.x |
@@ -82,7 +82,8 @@ Video-Piper/
 
 | Task | Command (from `video-piper/`) |
 |:---|:---|
-| **Build** | `dotnet build VideoPiper/VideoPiper.csproj` |
+| **Build Solution** | `dotnet build VideoPiper.sln` |
+| **Build Project** | `dotnet build VideoPiper/VideoPiper.csproj` |
 | **Run** | `dotnet run --project VideoPiper/VideoPiper.csproj` |
 | **Publish (standalone exe)** | `dotnet publish VideoPiper/VideoPiper.csproj -c Release -r win-x64 --self-contained true -o ./publish` |
 
@@ -97,11 +98,12 @@ Unlike the previous Deno Desktop version, this app has **no local HTTP server**.
 - **Tool Detection**: `SystemService.CheckToolsAsync()` resolves yt-dlp and ffmpeg from either the app's local `Tools/` directory or system PATH.
 - **In-App Installer**: `ToolInstallerService.InstallMissingAsync()` downloads yt-dlp.exe from GitHub releases and extracts ffmpeg from a ZIP archive into the app's local data folder.
 
-### 5.2 Frontend — WinUI 3 with MVVM
-- **Path Aliases**: Not needed — C# uses namespaces (e.g., `VideoPiper.ViewModels.MainViewModel`).
-- **MVVM Pattern**: The UI binds to `MainViewModel` via XAML data binding. Commands handle all user interactions.
-- **Value Converters**: `BoolToVisibilityConverter`, `InverseBoolToVisibilityConverter`, and `StringToVisibilityConverter` in `Converters/` namespace for XAML bindings.
-- **Theme Toggle**: Built-in dark/light theme switching with persisted preference via `PreferencesService`.
+### 5.2 Frontend — WinUI 3 with C# Markup & MVVM
+- **C# Markup DSL**: UI is authored declaratively in C# using Uno Platform C# Markup (`Uno.Extensions.Markup`) in `MainPage.cs`, providing type-safe markup, fluent styling, and direct refactoring support.
+- **MVVM Pattern**: The UI binds to `MainViewModel` via fluent `.Binding(...)` expressions. Commands (`ICommand` via `RelayCommand`) handle all user interactions.
+- **Value Converters & Inlines**: Property builders support inline lambdas (e.g., `.Convert(...)`) as well as standalone `IValueConverter` implementations.
+- **Theme Toggle**: Built-in dark/light theme switching via `App.SetTheme()` and persisted preference via `PreferencesService`.
+- **Window Size**: Compact window footprint (`540x580`) configured via `AppWindow.Resize()` in `App.xaml.cs`.
 
 ### 5.3 Preferences & Persistence
 User settings (save path, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder.Path`):
@@ -119,9 +121,9 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 | Aspect | Deno Desktop | Uno Platform (Current) |
 |:---|:---|:---|
 | **Runtime** | Deno v2.x (JavaScript/TypeScript) | .NET 10 (C#) |
-| **UI Framework** | React 19 + Tailwind CSS | WinUI 3 via Uno Platform |
+| **UI Framework** | React 19 + Tailwind CSS | WinUI 3 with C# Markup via Uno Platform |
 | **Backend** | HTTP/SSE server on localhost | Native process management |
-| **Folder Picker** | PowerShell script / zenity / osascript | `Windows.Storage.Pickers.FolderPicker` |
+| **Folder Picker** | PowerShell script / zenity / osascript | `Windows.Storage.Pickers.FolderPicker` (with HWND binding) |
 | **Clipboard** | `navigator.clipboard` API | `Windows.ApplicationModel.DataTransfer.Clipboard` |
 | **Persistence** | `localStorage` (browser) | JSON files in `ApplicationData.Current.LocalFolder` |
 
@@ -131,11 +133,11 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 
 2. **Native file I/O**: Preferences are now stored as JSON files instead of browser `localStorage`.
 
-3. **Value converters**: XAML bindings use `IValueConverter` implementations (BoolToVisibility, StringToVisibility) instead of JavaScript template literals.
+3. **C# Markup**: Instead of JSX or XAML, the UI is written in declarative C# Markup with strongly-typed fluent bindings.
 
 4. **Command pattern**: WinUI uses `ICommand` for button bindings, implemented via `RelayCommand` in the ViewModel.
 
-5. **Dispatcher threading**: UI updates from background threads use `CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync()` instead of React's automatic batching.
+5. **Dispatcher threading**: UI updates from background threads use `App.MainWindowInstance.DispatcherQueue` instead of React's automatic batching.
 
 ---
 
@@ -145,3 +147,4 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 2. **Single Target Framework**: The project targets only `net10.0-windows10.0.26100` — use singular `TargetFramework` in .csproj files.
 3. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
 4. **Swedish Strings**: Preserve Swedish localization for all user-facing strings. Do not introduce English-only strings without providing Swedish translations.
+
