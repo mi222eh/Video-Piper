@@ -6,18 +6,20 @@ Welcome to the **Video-Piper** repository. This document provides essential proj
 
 ## 1. Project Overview
 
-**Video-Piper** is a lightweight cross-platform desktop application built with **Deno Desktop**, **React 19**, and **TypeScript**. Its primary purpose is to simplify downloading and converting online audio/video (such as YouTube videos to MP3) using [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and `ffmpeg`.
+**Video-Piper** is a lightweight Windows desktop application for downloading YouTube videos as MP3 audio files. Built with **C#**, **.NET 10**, and **Uno Platform (WinUI 3)**.
 
 ### Key Capabilities
-- **Direct YouTube to MP3 download**: Spawns `yt-dlp` subprocesses directly through Deno's native `Deno.Command` API with real-time SSE progress streaming.
-- **System Integrations**: Native folder picker dialogs (PowerShell/zenity/osascript), clipboard integration, and external link handling.
-- **Modern UI**: Built with React 19, Tailwind CSS v4, and shadcn/ui components with dynamic dark/light mode support.
+- **Direct YouTube to MP3 download**: Spawns `yt-dlp` subprocesses directly through `System.Diagnostics.Process` with real-time progress parsing from stdout/stderr.
+- **Native folder picker**: Uses `Windows.Storage.Pickers.FolderPicker` for native Windows folder selection dialogs.
+- **In-app tool installer**: Downloads and installs missing dependencies (yt-dlp.exe, ffmpeg.exe) into the app's local data folder.
+- **Dark/Light theme toggle**: Built-in theme switching with persisted preference.
+- **Swedish localization**: All user-facing strings in Swedish (e.g., *"YouTube Länk"*, *"Spara till"*, *"Ladda ner MP3"*).
 
 ---
 
 ## 2. Repository Structure
 
-The repository contains the application source code in the `video-piper/` subfolder:
+The application source code is in the `video-piper/` subfolder:
 
 ```text
 Video-Piper/
@@ -26,40 +28,44 @@ Video-Piper/
 ├── app-icon.png               # App icon
 ├── app-splashscreen.png       # Splash screen asset
 └── video-piper/               # Main application root
-    ├── package.json           # Frontend dependencies & scripts
-    ├── pnpm-lock.yaml         # PNPM lockfile (primary frontend package manager)
-    ├── deno.json              # Deno workspace & desktop configuration
-    ├── server.ts              # Deno desktop entrypoint & HTTP/SSE backend server
-    ├── vite.config.ts         # Vite configuration (React Compiler, Tailwind, Path aliases)
-    ├── tsconfig.json          # TypeScript configuration
-    ├── components.json        # shadcn/ui configuration
-    ├── index.html             # HTML entry point
-    ├── public/                # Static public assets
-    └── src/                   # React frontend source code
-        ├── main.tsx           # Application bootstrap
-        ├── App.tsx            # Root component & state management
-        ├── App.css            # Tailwind v4 theme, OKLCH variables & global styles
-        ├── components/
-        │   └── ui/            # shadcn/ui components (50+ accessible primitives)
-        ├── hooks/             # Custom React hooks (e.g., use-mobile)
-        └── lib/               # Utility functions (cn helper, class merging)
+    ├── Directory.Build.props      # Shared MSBuild properties (nullable, CPM)
+    ├── Directory.Build.targets    # MSBuild targets (empty, extensible)
+    ├── Directory.Packages.props   # Central package version management
+    ├── global.json                # Uno.Sdk version pin
+    ├── VideoPiper.sln             # Solution file
+    ├── .gitignore                 # Git ignore rules
+    ├── README.md                  # Project documentation
+    └── VideoPiper/                # C# project root
+        ├── VideoPiper.csproj      # Uno Platform project file (CSharpMarkup enabled)
+        ├── App.xaml / App.xaml.cs # Application entry point & theme resources
+        ├── MainPage.cs            # Declarative WinUI 3 UI built with Uno C# Markup
+        ├── Models/
+        │   └── DownloadProgress.cs  # Progress state model
+        ├── Converters/
+        │   └── BoolToVisibilityConverter.cs  # XAML value converters
+        ├── Services/
+        │   ├── DownloadService.cs      # yt-dlp process runner with progress parsing
+        │   ├── SystemService.cs        # Tool detection (yt-dlp, ffmpeg)
+        │   ├── FolderPickerService.cs  # Native Windows folder picker
+        │   ├── PreferencesService.cs   # JSON-based preferences persistence
+        │   └── ToolInstallerService.cs # Downloads yt-dlp.exe & ffmpeg.zip
+        └── ViewModels/
+            ├── MainViewModel.cs    # MVVM view model with all commands
+            └── RelayCommand.cs     # ICommand implementation for WinUI
 ```
+
 
 ---
 
 ## 3. Technology Stack & Tooling
 
 | Component | Technology | Version / Details |
-| :--- | :--- | :--- |
-| **Desktop Framework** | [Deno Desktop](https://docs.deno.com/runtime/desktop/) | Built-in native windowing via `Deno.BrowserWindow` |
-| **Backend Runtime** | [Deno](https://deno.com/) | v2.x with standard library (`@std/http`, `@std/path`) |
-| **Frontend Framework**| [React](https://react.dev/) | 19.x with `babel-plugin-react-compiler` |
-| **Language** | [TypeScript](https://www.typescriptlang.org/) | 7.x with strict type checking |
-| **Bundler & Dev Server**| [Vite](https://vitejs.dev/) | 8.x |
-| **Styling** | [Tailwind CSS](https://tailwindcss.com/) | v4.x (CSS `@theme` and OKLCH color spaces) |
-| **UI Components** | [shadcn/ui](https://ui.shadcn.com/) | New York style with Radix UI primitives |
-| **Icons** | [Lucide React](https://lucide.dev/) | Icon library |
-| **Package Manager** | `pnpm` / `deno` | PNPM for frontend npm dependencies, Deno for server |
+|:---|:---|:---|
+| **UI Framework** | Uno Platform (WinUI 3) | 6.7.x |
+| **Runtime** | .NET | 10.0 |
+| **Language** | C# | 13 |
+| **Windows SDK** | WinAppSDK | 1.7.x |
+| **Package Manager** | MSBuild Central Package Management | — |
 
 ---
 
@@ -68,46 +74,74 @@ Video-Piper/
 > **Important**: Always run commands inside the `video-piper/` directory.
 
 ### Prerequisites
-- **Deno**: >= 2.0
-- **Node.js**: >= 20.x & **pnpm**: >= 9.x (for frontend build)
-- **yt-dlp & ffmpeg**: Available on system PATH for download functionality
+- **.NET 10 SDK** — https://dotnet.microsoft.com/download
+- **Windows 10+** (version 2004+)
+- **yt-dlp & ffmpeg**: Available on system PATH for download functionality (or use in-app installer)
 
 ### Common Commands
 
 | Task | Command (from `video-piper/`) |
-| :--- | :--- |
-| **Start Deno Server** | `deno task serve` |
-| **Launch Desktop App** | `deno task desktop` |
-| **Launch Desktop with HMR** | `deno task desktop:hmr` |
-| **Build Frontend** | `deno task build` (or `pnpm build`) |
-| **Compile Standalone Binary** | `deno task compile` |
-| **Typecheck Backend** | `deno check server.ts` |
+|:---|:---|
+| **Build** | `dotnet build VideoPiper/VideoPiper.csproj` |
+| **Run** | `dotnet run --project VideoPiper/VideoPiper.csproj` |
+| **Publish (standalone exe)** | `dotnet publish VideoPiper/VideoPiper.csproj -c Release -r win-x64 --self-contained true -o ./publish` |
 
 ---
 
 ## 5. Architecture & Code Conventions
 
-### 5.1 Deno Desktop Backend Architecture
-- **Window Management**: `server.ts` checks for `Deno.BrowserWindow` to configure the desktop window dimensions and title when launched under `deno desktop`.
-- **HTTP / SSE APIs**:
-  - `GET /api/health`: Validates presence of `yt-dlp` and `ffmpeg`.
-  - `POST /api/browse`: Spawns native OS folder selection dialogs (PowerShell on Windows, Zenity/KDialog on Linux, AppleScript on macOS).
-  - `GET /api/download?url=...&savePath=...`: Streams Server-Sent Events (SSE) providing live percentage, download speed, and ETA directly parsed from `yt-dlp` output.
-- **Static File Serving**: Serves the compiled React SPA from `dist/` with fallback to `index.html`.
+### 5.1 Backend Architecture — Native Process Management
+Unlike the previous Deno Desktop version, this app has **no local HTTP server**. All functionality runs natively:
 
-### 5.2 Frontend & React 19 Guidelines
-- **Path Aliases**: Use `@/` to import from `src/` (e.g., `@/components/ui/button`, `@/lib/utils`).
-- **React Compiler**: The project utilizes `babel-plugin-react-compiler`. Avoid manual `useMemo`/`useCallback` unless necessary, and follow React rules (pure render functions, immutability) so the compiler can optimize effectively.
-- **Styling**:
-  - Keep design tokens in OKLCH format inside `src/App.css`.
-  - Use `cn(...)` from `@/lib/utils` for conditional class joining and tailwind merge.
-  - Follow the existing shadcn/ui structure when creating or modifying UI components.
-- **Language / Localization**: Current user-facing strings are in Swedish (e.g. *"Youtube Länk"*, *"Spara till"*, *"Ladda ner MP3"*). If introducing internationalization (i18n), preserve Swedish support or make it configurable.
+- **yt-dlp Downloads**: `DownloadService.RunAsync()` spawns `yt-dlp` via `System.Diagnostics.Process` with stdout/stderr piped for real-time progress parsing. Progress is reported through an `Action<DownloadProgress>` callback.
+- **Tool Detection**: `SystemService.CheckToolsAsync()` resolves yt-dlp and ffmpeg from either the app's local `Tools/` directory or system PATH.
+- **In-App Installer**: `ToolInstallerService.InstallMissingAsync()` downloads yt-dlp.exe from GitHub releases and extracts ffmpeg from a ZIP archive into the app's local data folder.
+
+### 5.2 Frontend — WinUI 3 with MVVM
+- **Path Aliases**: Not needed — C# uses namespaces (e.g., `VideoPiper.ViewModels.MainViewModel`).
+- **MVVM Pattern**: The UI binds to `MainViewModel` via XAML data binding. Commands handle all user interactions.
+- **Value Converters**: `BoolToVisibilityConverter`, `InverseBoolToVisibilityConverter`, and `StringToVisibilityConverter` in `Converters/` namespace for XAML bindings.
+- **Theme Toggle**: Built-in dark/light theme switching with persisted preference via `PreferencesService`.
+
+### 5.3 Preferences & Persistence
+User settings (save path, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder.Path`):
+- `preferences.json` — save path
+- `theme.json` — current theme ("light" or "dark")
 
 ---
 
-## 6. Guidelines for AI Agents
+## 6. Migration Notes: Deno Desktop → Uno Platform
 
-1. **Working Directory Awareness**: Ensure commands like `pnpm install`, `pnpm build`, `deno task desktop`, or `deno task compile` are executed with `Cwd: video-piper`.
-2. **Lockfile Integrity**: Use `pnpm` (not `npm` or `yarn`) to avoid creating conflicting lockfiles.
-3. **Clean Code**: Follow TypeScript strict mode. Ensure type safety on HTTP endpoints and SSE streams.
+This project was migrated from a Deno Desktop (TypeScript) backend to a native C#/.NET WinUI 3 application.
+
+### What Changed
+
+| Aspect | Deno Desktop | Uno Platform (Current) |
+|:---|:---|:---|
+| **Runtime** | Deno v2.x (JavaScript/TypeScript) | .NET 10 (C#) |
+| **UI Framework** | React 19 + Tailwind CSS | WinUI 3 via Uno Platform |
+| **Backend** | HTTP/SSE server on localhost | Native process management |
+| **Folder Picker** | PowerShell script / zenity / osascript | `Windows.Storage.Pickers.FolderPicker` |
+| **Clipboard** | `navigator.clipboard` API | `Windows.ApplicationModel.DataTransfer.Clipboard` |
+| **Persistence** | `localStorage` (browser) | JSON files in `ApplicationData.Current.LocalFolder` |
+
+### Key Technical Differences
+
+1. **No local server needed**: The Deno version ran an HTTP server on port 1420 that served the React SPA and provided SSE endpoints for downloads. The Uno version eliminates this entirely — `yt-dlp` is spawned directly from C# code.
+
+2. **Native file I/O**: Preferences are now stored as JSON files instead of browser `localStorage`.
+
+3. **Value converters**: XAML bindings use `IValueConverter` implementations (BoolToVisibility, StringToVisibility) instead of JavaScript template literals.
+
+4. **Command pattern**: WinUI uses `ICommand` for button bindings, implemented via `RelayCommand` in the ViewModel.
+
+5. **Dispatcher threading**: UI updates from background threads use `CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync()` instead of React's automatic batching.
+
+---
+
+## 7. Guidelines for AI Agents
+
+1. **Working Directory Awareness**: Ensure commands like `dotnet build`, `dotnet run` are executed with `Cwd: video-piper`.
+2. **Single Target Framework**: The project targets only `net10.0-windows10.0.26100` — use singular `TargetFramework` in .csproj files.
+3. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
+4. **Swedish Strings**: Preserve Swedish localization for all user-facing strings. Do not introduce English-only strings without providing Swedish translations.

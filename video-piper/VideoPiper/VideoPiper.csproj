@@ -1,0 +1,33 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100</TargetFramework>
+
+    <OutputType>Exe</OutputType>
+    <UnoSingleProject>true</UnoSingleProject>
+
+    <!-- Display name -->
+    <ApplicationTitle>Video Piper</ApplicationTitle>
+    <!-- App Identifier -->
+    <ApplicationId>com.videopiper.app</ApplicationId>
+    <!-- Versions -->
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <!-- Package Publisher -->
+    <ApplicationPublisher>Video Piper</ApplicationPublisher>
+    <!-- Package Description -->
+    <Description>Ladda ner YouTube-videor som MP3.</Description>
+
+    <!-- Run unpackaged: launch the exe directly without MSIX deployment -->
+    <WindowsPackageType>None</WindowsPackageType>
+
+    <!--
+      UnoFeatures are used to quickly add and manage features enabled for your app.
+      https://aka.platform.uno/singleproject-features
+    -->
+    <UnoFeatures>
+      CSharpMarkup;
+      SkiaRenderer;
+    </UnoFeatures>
+  </PropertyGroup>
+
+</Project>
