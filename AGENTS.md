@@ -6,10 +6,18 @@ Welcome to the **Video-Piper** repository. This document provides essential proj
 
 ## 1. Project Overview
 
-**Video-Piper** is a cross-platform desktop application for downloading YouTube videos as MP3 audio files. Built with **C#**, **.NET 10**, and **Uno Platform**. The primary target is Windows (native WinUI 3 / WinAppSDK), with an additional Skia-rendered desktop target that builds and runs on Linux and macOS.
+**Video-Piper** is a cross-platform desktop application for downloading YouTube videos and audio. Built with **C#**, **.NET 10**, and **Uno Platform**. The primary target is Windows (native WinUI 3 / WinAppSDK), with an additional Skia-rendered desktop target that builds and runs on Linux and macOS.
+
+It has two modes, exposed as tabs in the main window:
+- **Nedladdning** (Simple): one-off downloads of a single link to a chosen folder, as MP3 or MP4.
+- **Bibliotek** (Library): a managed, persistent library with channel/playlist subfolders, debounced YouTube search, per-item progress, and local playback.
 
 ### Key Capabilities
-- **Direct YouTube to MP3 download**: Spawns `yt-dlp` subprocesses directly through `System.Diagnostics.Process` with real-time progress parsing from stdout/stderr.
+- **Direct YouTube download**: Spawns `yt-dlp` subprocesses directly through `System.Diagnostics.Process` with real-time progress parsing from stdout/stderr. Audio → MP3; video → MP4 (bestvideo+bestaudio merged, capped at 1080p).
+- **MP3/MP4 format choice**: A toggle selects the output format in both modes; the choice is persisted.
+- **Managed library**: Persistent index (`<root>/.videopiper/library.json`) tracking items across launches. Files are organized as `<root>/<Channel>/<Playlist>/`, resolved by `LibraryStore.ResolveTargetFolder`. Interrupted downloads are marked failed on next load.
+- **YouTube search**: Debounced (400 ms) search via yt-dlp's `youtubesearch` extractor; results stream back without blocking the UI and can be downloaded directly into the library.
+- **Playlist support**: A playlist URL pre-fetches all entries (`--flat-playlist`) and downloads them sequentially, each with its own progress/status.
 - **Folder picker**: Native `Windows.Storage.Pickers.FolderPicker` on Windows; on non-Windows targets the UI falls back to manual path entry / default Music folder.
 - **In-app tool installer**: Downloads and installs missing dependencies (yt-dlp.exe, ffmpeg.exe) into the app's local data folder.
 - **Dark/Light theme toggle**: Built-in theme switching with persisted preference.
@@ -37,22 +45,32 @@ Video-Piper/
     ├── README.md                  # Project documentation
     └── VideoPiper/                # C# project root
         ├── VideoPiper.csproj      # Uno Platform project file (CSharpMarkup enabled)
-        ├── App.xaml / App.xaml.cs # Application entry point & theme resources
-        ├── MainPage.cs            # Declarative WinUI 3 UI built with Uno C# Markup
+        ├── App.xaml / App.xaml.cs # Application entry point, shared DataTemplates & theme resources
+        ├── MainPage.cs            # Declarative WinUI 3 UI built with Uno C# Markup (both tabs)
+        ├── GlobalUsings.cs        # Project-wide implicit usings
         ├── Models/
-        │   └── DownloadProgress.cs  # Progress state model
+        │   ├── DownloadProgress.cs  # Progress state model (simple mode)
+        │   ├── MediaEntry.cs        # yt-dlp metadata for one downloadable item
+        │   └── LibraryItem.cs       # Library entry + MediaKind / ItemStatus enums, INotifyPropertyChanged
         ├── Converters/
         │   └── BoolToVisibilityConverter.cs  # XAML value converters
         ├── Services/
-        │   ├── DownloadService.cs      # yt-dlp process runner with progress parsing
+        │   ├── DownloadService.cs      # yt-dlp process runner (simple mode), MP3 or MP4 by MediaKind
+        │   ├── LibraryDownloadService.cs # Pre-fetch + sequential download into the library
+        │   ├── LibraryStore.cs         # Library root, .videopiper/library.json index, folder resolution
+        │   ├── YtDlpJson.cs            # Shared parser for yt-dlp -J output (playlist vs single)
+        │   ├── SearchService.cs        # Debounced YouTube search via youtubesearch extractor
         │   ├── SystemService.cs        # Tool detection (yt-dlp, ffmpeg)
         │   ├── FolderPickerService.cs  # Native Windows folder picker
         │   ├── PreferencesService.cs   # JSON-based preferences persistence
         │   └── ToolInstallerService.cs # Downloads yt-dlp.exe & ffmpeg.zip
         └── ViewModels/
-            ├── MainViewModel.cs    # MVVM view model with all commands
-            └── RelayCommand.cs     # ICommand implementation for WinUI
+            ├── MainViewModel.cs    # MVVM view model for the simple (Nedladdning) tab
+            ├── LibraryViewModel.cs # MVVM view model for the library (Bibliotek) tab + search
+            └── RelayCommand.cs     # ICommand implementations (RelayCommand / ParameterizedRelayCommand)
 ```
+
+> Note: `video-piper/` also contains leftover, **untracked** scaffolding from the earlier Tauri/Deno experiments (`src-tauri/`, `dist/`, `node_modules/`). These are not part of the build — the app is entirely the Uno/C# project under `VideoPiper/`.
 
 
 ---
@@ -110,21 +128,28 @@ The project uses **conditional multi-targeting** in `VideoPiper/VideoPiper.cspro
 ### 5.1 Backend Architecture — Native Process Management
 Unlike the previous Deno Desktop version, this app has **no local HTTP server**. All functionality runs natively:
 
-- **yt-dlp Downloads**: `DownloadService.RunAsync()` spawns `yt-dlp` via `System.Diagnostics.Process` with stdout/stderr piped for real-time progress parsing. Progress is reported through an `Action<DownloadProgress>` callback.
-- **Tool Detection**: `SystemService.CheckToolsAsync()` resolves yt-dlp and ffmpeg from either the app's local `Tools/` directory or system PATH.
+- **Simple-mode downloads**: `DownloadService.RunAsync(url, savePath, MediaKind, …)` spawns `yt-dlp` via `System.Diagnostics.Process` with stdout/stderr piped for real-time progress parsing. Audio uses `-x --audio-format mp3`; video uses `bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/…` merged to MP4. Progress is reported through an `Action<DownloadProgress>` callback.
+- **Library downloads**: `LibraryDownloadService.FetchEntriesAsync()` pre-fetches metadata (one entry for a single video, all entries for a playlist via `--flat-playlist`), then `DownloadManyAsync()` downloads entries sequentially so each item gets its own progress and status. Every mutation is registered in the `LibraryStore` before/after each step.
+- **yt-dlp JSON parsing**: Centralized in `YtDlpJson.cs` (playlist vs single). Both download and search parse through it — don't add a second parser.
+- **Search**: `SearchService.SearchAsync()` runs `ytsearchN:<query>` with `--flat-playlist -J` (one fast call, no downloads) and maps entries to `SearchResult`. Debouncing + cancellation live in `LibraryViewModel`.
+- **Tool Detection**: `SystemService.CheckToolsAsync()` resolves yt-dlp and ffmpeg from either the app's local `Tools/` directory or system PATH. Reuse it for any new tool invocation rather than re-implementing path lookup.
 - **In-App Installer**: `ToolInstallerService.InstallMissingAsync()` downloads yt-dlp.exe from GitHub releases and extracts ffmpeg from a ZIP archive into the app's local data folder.
 
 ### 5.2 Frontend — WinUI 3 with C# Markup & MVVM
-- **C# Markup DSL**: UI is authored declaratively in C# using Uno Platform C# Markup (`Uno.Extensions.Markup`) in `MainPage.cs`, providing type-safe markup, fluent styling, and direct refactoring support.
-- **MVVM Pattern**: The UI binds to `MainViewModel` via fluent `.Binding(...)` expressions. Commands (`ICommand` via `RelayCommand`) handle all user interactions.
+- **C# Markup DSL**: UI is authored declaratively in C# using Uno Platform C# Markup (`Uno.Extensions.Markup`) in `MainPage.cs`, providing type-safe markup, fluent styling, and direct refactoring support. Shared row `DataTemplate`s live in `App.xaml` resources.
+- **Two tabs**: `MainPage` hosts a `TabView` with two `TabViewItem`s — **"Nedladdning"** (`BuildSimpleTab` → `MainViewModel`) and **"Bibliotek"** (`BuildLibraryTab` → `LibraryViewModel`).
+- **MVVM Pattern**: Each tab binds to its own view model via fluent `.Binding(...)` expressions. Commands (`ICommand` via `RelayCommand` / `ParameterizedRelayCommand`) handle all user interactions. View models implement `INotifyPropertyChanged` with a private `Set(ref field, value)` helper and refresh command `CanExecute` when relevant state changes.
 - **Value Converters & Inlines**: Property builders support inline lambdas (e.g., `.Convert(...)`) as well as standalone `IValueConverter` implementations.
+- **Uno XAML gotchas** (hit during development): `TabView<T>` generic parameters and `TabView.Items` are not supported — use plain `TabView` + `tab.TabItems.Add(TabViewItem)`. The XAML compiler rejects `RelativeSource AncestorType=…`; for a command inside an ItemTemplate that must reach the page/VM, wire `ListView.ItemClick` in code instead of an ancestor binding.
 - **Theme Toggle**: Built-in dark/light theme switching via `App.SetTheme()` and persisted preference via `PreferencesService`.
-- **Window Size**: Compact window footprint (`540x580`) configured via `AppWindow.Resize()` in `App.xaml.cs`.
+- **Window Size**: Compact window footprint (`620x720`) configured via `AppWindow.Resize()` in `App.xaml.cs`.
 
 ### 5.3 Preferences & Persistence
-User settings (save path, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder.Path`):
-- `preferences.json` — save path
+User settings are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder.Path`):
+- `preferences.json` — save path, app mode (Simple/Library), library root, and output format (`MediaKind`)
 - `theme.json` — current theme ("light" or "dark")
+
+The **library index** is separate from preferences: it lives inside the user-chosen library root at `<root>/.videopiper/library.json`, written atomically (temp file + rename) by `LibraryStore`. Media files are organized as `<root>/<Channel>/<Playlist>/` via `ResolveTargetFolder` (invalid filename characters are sanitized; missing channel falls back to a `Misc` folder).
 
 ---
 
@@ -161,7 +186,9 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 
 1. **Working Directory Awareness**: Ensure commands like `dotnet build`, `dotnet run` are executed with `Cwd: video-piper`.
 2. **Multi-Targeting**: The project uses conditional `<TargetFrameworks>` (WinAppSDK on Windows, `net10.0` Skia desktop elsewhere). Do not revert to a singular `<TargetFramework>`. When adding targets or OS-specific config, keep the existing MSBuild conditions intact.
-3. **Platform-Conditional Code**: Use Uno's predefined symbols (`WINDOWS`, `__WASM__`, `HAS_UNO`, etc.) for platform-specific APIs. Windows-only APIs such as `Windows.Storage.Pickers` and `WinRT.Interop` must be wrapped in `#if WINDOWS` so the `net10.0` Skia target still compiles on Linux/macOS — see `FolderPickerService.cs` for the pattern.
+3. **Platform-Conditional Code**: Use Uno's predefined symbols (`WINDOWS`, `__WASM__`, `HAS_UNO`, etc.) for platform-specific APIs. Windows-only APIs such as `Windows.Storage.Pickers`, `WinRT.Interop`, and in-app `MediaElement` playback must be wrapped in `#if WINDOWS` so the `net10.0` Skia target still compiles on Linux/macOS — see `FolderPickerService.cs` and `MainPage.cs` (player card) for the pattern.
 4. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
 5. **Swedish Strings**: Preserve Swedish localization for all user-facing strings. Do not introduce English-only strings without providing Swedish translations.
+6. **Library changes**: When touching library behavior, keep the index as the single source of truth — mutate in memory then call `LibraryStore.SaveAsync()`. Route new downloads through `LibraryDownloadService` and parse any yt-dlp `-J` output via `YtDlpJson` (never a second ad-hoc parser). Keep per-item progress/status updates on the UI thread via the view model's dispatcher helper.
+7. **Don't touch untracked scaffolding**: `video-piper/src-tauri/`, `video-piper/dist/`, and `node_modules/` are leftover, untracked artifacts from earlier experiments — ignore them; they are not part of the build.
 

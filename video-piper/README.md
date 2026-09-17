@@ -1,13 +1,16 @@
 # Video Piper
 
-A lightweight Windows desktop application for downloading YouTube videos as MP3 audio files. Built with C#, .NET 10, and Uno Platform (WinUI 3).
+A lightweight cross-platform desktop application for downloading YouTube videos and audio as MP3 or MP4. Built with C#, .NET 10, and Uno Platform (WinUI 3). Targets Windows natively plus a Skia desktop build for Linux/macOS.
 
 ## Features
 
-- **Direct YouTube to MP3 download** — Spawns `yt-dlp` subprocesses with real-time progress streaming
+- **Direct YouTube download** — Spawns `yt-dlp` subprocesses with real-time progress streaming
+- **MP3 or MP4 output** — Audio (MP3) or video (MP4, up to 1080p); the choice is persisted
+- **Library mode** — Persistent library organized as `Channel / Playlist`, with per-item progress and local playback
+- **YouTube search** — Debounced in-app search; download results straight into the library
 - **Native folder picker** — Uses Windows.Storage.Pickers for native Windows folder selection dialogs
 - **Uno Platform C# Markup** — Fluent declarative C# DSL for UI composition instead of XAML
-- **System tray & theme toggle** — Minimal, modern WinUI 3 UI with dark/light theme support
+- **Theme toggle** — Minimal, modern WinUI 3 UI with dark/light theme support
 - **Tool installation** — In-app installer for missing dependencies (yt-dlp, ffmpeg)
 - **Swedish localization** — All user-facing strings in Swedish
 
@@ -25,30 +28,39 @@ A lightweight Windows desktop application for downloading YouTube videos as MP3 
 ```
 VideoPiper/
 ├── VideoPiper.csproj          # Uno Platform project with CSharpMarkup feature
-├── App.xaml / App.xaml.cs     # Application entry point & theme initialization
-├── MainPage.cs                # Main UI built declaratively with Uno C# Markup
+├── App.xaml / App.xaml.cs     # Application entry point, shared DataTemplates & theme init
+├── MainPage.cs                # Main UI (both tabs) built declaratively with Uno C# Markup
+├── GlobalUsings.cs            # Project-wide implicit usings
 ├── Models/
-│   └── DownloadProgress.cs    # Progress state model
+│   ├── DownloadProgress.cs    # Progress state model (simple mode)
+│   ├── MediaEntry.cs          # yt-dlp metadata for one downloadable item
+│   └── LibraryItem.cs         # Library entry + MediaKind / ItemStatus enums
 ├── Converters/
 │   └── BoolToVisibilityConverter.cs  # Value converters
 ├── Services/
-│   ├── DownloadService.cs     # yt-dlp process runner with progress parsing
+│   ├── DownloadService.cs     # yt-dlp process runner (simple mode), MP3 or MP4 by MediaKind
+│   ├── LibraryDownloadService.cs # Pre-fetch + sequential download into the library
+│   ├── LibraryStore.cs        # Library root, .videopiper/library.json index, folder resolution
+│   ├── YtDlpJson.cs           # Shared parser for yt-dlp -J output (playlist vs single)
+│   ├── SearchService.cs       # Debounced YouTube search via youtubesearch extractor
 │   ├── SystemService.cs       # Tool detection (yt-dlp, ffmpeg)
 │   ├── FolderPickerService.cs # Native Windows folder picker with HWND binding
 │   ├── PreferencesService.cs  # JSON-based preferences persistence
 │   └── ToolInstallerService.cs # Downloads yt-dlp.exe & ffmpeg.zip
 └── ViewModels/
-    ├── MainViewModel.cs       # MVVM view model with all commands and reactive state
-    └── RelayCommand.cs        # ICommand implementation for WinUI
+    ├── MainViewModel.cs       # MVVM view model for the simple (Nedladdning) tab
+    ├── LibraryViewModel.cs    # MVVM view model for the library (Bibliotek) tab + search
+    └── RelayCommand.cs        # ICommand implementations (RelayCommand / ParameterizedRelayCommand)
 ```
 
 ### Key Design Decisions
 
 - **C# Markup DSL**: The UI is authored declaratively in C# using Uno Platform C# Markup (`Uno.Extensions.Markup`), providing strong typing, refactoring safety, and fluent layout construction.
-- **MVVM Pattern**: The UI binds to `MainViewModel` via fluent `.Binding(...)` expressions. Commands handle user interactions.
-- **No HTTP Server**: Runs entirely as a native Windows application with no local server needed.
+- **MVVM Pattern**: Each tab binds to its own view model via fluent `.Binding(...)` expressions. Commands handle user interactions.
+- **No HTTP Server**: Runs entirely as a native application with no local server needed.
 - **Process-based Downloads**: `yt-dlp` is spawned directly via `System.Diagnostics.Process` with stdout/stderr piped for real-time progress parsing.
-- **JSON Preferences**: User settings (save path, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder`).
+- **Persistent Library**: The library index lives at `<root>/.videopiper/library.json` (written atomically); media files are organized as `<root>/<Channel>/<Playlist>/`.
+- **JSON Preferences**: User settings (save path, app mode, library root, output format, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder`).
 
 
 ## Building & Running
@@ -56,14 +68,16 @@ VideoPiper/
 ### Prerequisites
 
 - **.NET 10 SDK** — https://dotnet.microsoft.com/download
-- **Windows 10+** (version 2004+)
+- **Windows 10+** (version 2004+) for the native target, **or** Linux/macOS with GTK 3 dev packages for the Skia desktop target
 - **Visual Studio 2022** or **VS Code** with C# Dev Kit
 
 ### Build
 
 ```bash
 cd video-piper
-dotnet build VideoPiper/VideoPiper.csproj
+dotnet build VideoPiper/VideoPiper.csproj            # auto-selects target per OS
+dotnet build -f net10.0-windows10.0.26100           # Windows (WinAppSDK) target — Windows host only
+dotnet build -f net10.0                             # Skia desktop target — any OS
 ```
 
 ### Run
@@ -87,7 +101,7 @@ The app requires two external tools to function:
 | Tool | Purpose | Installation |
 |------|---------|-------------|
 | **yt-dlp** | Video download & metadata extraction | In-app installer or system PATH |
-| **ffmpeg** | Audio conversion (MP3 encoding) | In-app installer or system PATH |
+| **ffmpeg** | Audio conversion (MP3) and video merging (MP4) | In-app installer or system PATH |
 
 ### In-App Installer
 
