@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using VideoPiper.Models;
 
 namespace VideoPiper.Services;
 
@@ -18,7 +19,7 @@ public enum AppMode
 /// </summary>
 public static class PreferencesService
 {
-    private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot);
+    private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot, MediaKind? Format);
 
     private static string FilePath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "preferences.json");
 
@@ -45,7 +46,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot, current?.Format)));
         }
         catch
         {
@@ -60,7 +61,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot, current?.Format)));
         }
         catch
         {
@@ -75,7 +76,23 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root, current?.Format)));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    /// <summary>The preferred output format for downloads (defaults to audio/MP3).</summary>
+    public static MediaKind GetFormat() => Load()?.Format ?? MediaKind.Audio;
+
+    public static void SetFormat(MediaKind format)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, format)));
         }
         catch
         {

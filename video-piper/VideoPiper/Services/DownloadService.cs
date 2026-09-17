@@ -6,11 +6,13 @@ using VideoPiper.Models;
 namespace VideoPiper.Services;
 
 /// <summary>
-/// Runs yt-dlp to download and convert a video to MP3, reporting progress line by line.
+/// Runs yt-dlp to download a video as MP3 (audio) or MP4 (video), reporting progress line by line.
 /// Mirrors the SSE behavior of the previous Deno backend.
 /// </summary>
 public static class DownloadService
 {
+    private const string VideoFormat = "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best";
+
     private static readonly Regex ProgressRegex = new(
         @"\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+/s)\s+ETA\s+([\d:]+)",
         RegexOptions.Compiled);
@@ -18,6 +20,7 @@ public static class DownloadService
     public static async Task RunAsync(
         string targetUrl,
         string? savePath,
+        MediaKind kind,
         CancellationToken cancellationToken,
         Action<DownloadProgress> onProgress)
     {
@@ -35,8 +38,11 @@ public static class DownloadService
 
         try
         {
-            var psi = new ProcessStartInfo(ytDlpPath,
-                $"-x --audio-format mp3 --newline --progress \"{targetUrl}\"")
+            var args = kind == MediaKind.Audio
+                ? $"-x --audio-format mp3 --newline --progress \"{targetUrl}\""
+                : $"-f \"{VideoFormat}\" --merge-output-format mp4 --newline --progress \"{targetUrl}\"";
+
+            var psi = new ProcessStartInfo(ytDlpPath, args)
             {
                 WorkingDirectory = workingDir,
                 RedirectStandardOutput = true,
@@ -51,8 +57,8 @@ public static class DownloadService
                 throw new InvalidOperationException("Kunde inte starta yt-dlp.");
             }
 
-            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, isError: false);
-            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, isError: true);
+            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, kind, isError: false);
+            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, kind, isError: true);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(stdoutTask, stderrTask);
@@ -84,6 +90,7 @@ public static class DownloadService
     private static async Task ReadLinesAsync(
         System.IO.StreamReader reader,
         Action<DownloadProgress> onProgress,
+        MediaKind kind,
         bool isError)
     {
         string? line;
@@ -113,7 +120,7 @@ public static class DownloadService
                 {
                     Status = "converting",
                     Percent = 99,
-                    Message = "Konverterar till MP3...",
+                    Message = kind == MediaKind.Audio ? "Konverterar till MP3..." : "Sätter ihop video (MP4)...",
                 });
             }
             else

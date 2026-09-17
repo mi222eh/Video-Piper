@@ -25,6 +25,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _installFfmpegBusy;
     private string? _installStatus;
     private bool _isDark = true;
+    private MediaKind _format = MediaKind.Audio;
 
     private readonly RelayCommand _downloadCommand;
     private readonly RelayCommand _installYtDlpCommand;
@@ -74,6 +75,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string SavePathDisplay => string.IsNullOrWhiteSpace(_savePath) ? "Standard / Arbetskatalog (Musik)" : _savePath;
+
+    /// <summary>Output format for one-off downloads: MP3 (audio) or MP4 (video). Persisted.</summary>
+    public MediaKind Format
+    {
+        get => _format;
+        set
+        {
+            if (Set(ref _format, value))
+            {
+                PreferencesService.SetFormat(value);
+                OnPropertyChanged(nameof(IsAudioSelected));
+                OnPropertyChanged(nameof(IsVideoSelected));
+                OnPropertyChanged(nameof(DownloadButtonText));
+            }
+        }
+    }
+
+    /// <summary>Label for the primary download button, reflecting the chosen format.</summary>
+    public string DownloadButtonText => _format == MediaKind.Audio ? "Ladda ner MP3" : "Ladda ner MP4";
+
+    /// <summary>Two-way bound to the format toggle: ON = MP3 (audio), OFF = MP4 (video).</summary>
+    public bool IsAudioSelected
+    {
+        get => _format == MediaKind.Audio;
+        set => Format = value ? MediaKind.Audio : MediaKind.Video;
+    }
+
+    public bool IsVideoSelected => _format == MediaKind.Video;
 
     public bool IsBusy
     {
@@ -227,6 +256,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task InitializeAsync()
     {
         SavePath = PreferencesService.GetSavePath() ?? string.Empty;
+        Format = PreferencesService.GetFormat();
         var savedTheme = PreferencesService.GetTheme();
         IsDark = savedTheme != "light";
         App.SetTheme(IsDark);
@@ -307,7 +337,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var url = CleanUrl(Link.Trim());
-            await DownloadService.RunAsync(url, SavePath, _downloadCts.Token, OnProgress);
+            await DownloadService.RunAsync(url, SavePath, Format, _downloadCts.Token, OnProgress);
         }
         catch (Exception ex)
         {

@@ -57,6 +57,7 @@ public sealed partial class MainPage : Page
                                         new RowDefinition { Height = GridLength.Auto }, // Missing Tools Card
                                         new RowDefinition { Height = GridLength.Auto }, // Link Field
                                         new RowDefinition { Height = GridLength.Auto }, // Save Path Field
+                                        new RowDefinition { Height = GridLength.Auto }, // Format Toggle (MP3/MP4)
                                         new RowDefinition { Height = GridLength.Auto }, // Progress Card
                                         new RowDefinition { Height = GridLength.Auto }  // Download Action Button
                                     )
@@ -64,8 +65,9 @@ public sealed partial class MainPage : Page
                                         BuildMissingToolsCard(vm).Grid(row: 0),
                                         BuildLinkField(vm).Grid(row: 1),
                                         BuildSavePathField(vm).Grid(row: 2),
-                                        BuildProgressCard(vm).Grid(row: 3),
-                                        BuildDownloadButton(vm).Grid(row: 4)
+                                        BuildSimpleFormatToggle(vm).Grid(row: 3),
+                                        BuildProgressCard(vm).Grid(row: 4),
+                                        BuildDownloadButton(vm).Grid(row: 5)
                                     )
                             )
                     );
@@ -701,6 +703,24 @@ public sealed partial class MainPage : Page
             );
     }
 
+    /// <summary>MP3/MP4 format switch for one-off downloads (ON = MP3, OFF = MP4).</summary>
+    private static StackPanel BuildSimpleFormatToggle(MainViewModel vm)
+    {
+        return new StackPanel()
+            .Spacing(6)
+            .Children(
+                new TextBlock()
+                    .Text("Format")
+                    .FontSize(12)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
+                new ToggleSwitch()
+                    .IsOn(x => x.Binding(() => vm.IsAudioSelected))
+                    .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                    .OffContent("MP4 (video)")
+                    .OnContent("MP3 (ljud)")
+            );
+    }
+
     private static Border BuildProgressCard(MainViewModel vm)
     {
         return new Border()
@@ -810,7 +830,7 @@ public sealed partial class MainPage : Page
                                     .Glyph("\uE896")
                                     .FontSize(16),
                                 new TextBlock()
-                                    .Text("Ladda ner MP3")
+                                    .Text(x => x.Binding(() => vm.DownloadButtonText))
                                     .FontSize(15)
                                     .FontWeight(FontWeights.SemiBold)
                                     .VerticalAlignment(VerticalAlignment.Center)
