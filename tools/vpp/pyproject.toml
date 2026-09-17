@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vpp"
+version = "0.1.0"
+description = "Command-line project manager for the Video-Piper Uno/.NET desktop app."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Video-Piper" }]
+keywords = ["video-piper", "uno", "dotnet", "cli", "build"]
+# No runtime dependencies — the CLI is stdlib-only and shells out to `dotnet`.
+dependencies = []
+
+[project.scripts]
+vpp = "vpp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mi222eh/Video-Piper"
+
+[tool.setuptools]
+packages = ["vpp"]

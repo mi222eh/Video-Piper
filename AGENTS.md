@@ -35,6 +35,13 @@ Video-Piper/
 ├── Video Piper Icon.png       # Branding & Icon asset
 ├── app-icon.png               # App icon
 ├── app-splashscreen.png       # Splash screen asset
+├── tools/
+│   └── vpp/                   # `vpp` CLI — Python project manager (build/run/publish)
+│       ├── pyproject.toml     # Packaging + `vpp` console-script entry point
+│       ├── README.md          # CLI usage docs
+│       └── vpp/               # The package (stdlib-only, shells out to `dotnet`)
+│           ├── __init__.py
+│           └── cli.py         # argparse subcommands: build / run / publish / doctor
 └── video-piper/               # Main application root
     ├── Directory.Build.props      # Shared MSBuild properties (nullable, CPM)
     ├── Directory.Build.targets    # MSBuild targets (empty, extensible)
@@ -96,6 +103,29 @@ Video-Piper/
 - **.NET 10 SDK** — https://dotnet.microsoft.com/download
 - **Windows**: Windows 10+ (version 2004+) for the native WinUI 3 target; **or Linux/macOS** with GTK 3 dev packages for the Skia desktop target (e.g., `dnf install gtk3-devel` on Fedora/Nobara)
 - **yt-dlp & ffmpeg**: Available on system PATH for download functionality (or use in-app installer)
+- **Python 3.9+** (optional): only needed to install the `vpp` CLI from `tools/vpp/`
+
+### vpp CLI (recommended)
+
+A small, dependency-free Python CLI (`tools/vpp/`) wraps the .NET workflow and
+knows about Uno's conditional multi-targeting. It finds `VideoPiper.sln` from
+anywhere in the repo and auto-selects the right target for your OS.
+
+```bash
+cd tools/vpp
+python3 -m pip install -e .     # or: uv tool install -e .   (adds `vpp` to PATH)
+```
+
+| Task | Command (run from anywhere in the repo) |
+|:---|:---|
+| **Check prerequisites** (.NET SDK, yt-dlp, ffmpeg) | `vpp doctor` |
+| **Build (auto-selects target per OS)** | `vpp build` |
+| **Full rebuild / clean first** | `vpp build --no-incremental` · `vpp build --clean` |
+| **Run the app** | `vpp run` |
+| **Publish standalone exe** (win-x64, Release) | `vpp publish` (`--self-contained` for a full bundle) |
+
+Use `-c/--configuration` (default `Debug`) or `-f/--framework` to override. The
+raw `dotnet` equivalents below remain available if you prefer not to install the CLI.
 
 ### Common Commands
 
@@ -184,7 +214,7 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 
 ## 7. Guidelines for AI Agents
 
-1. **Working Directory Awareness**: Ensure commands like `dotnet build`, `dotnet run` are executed with `Cwd: video-piper`.
+1. **Build via `vpp` (preferred)**: Use the `vpp` CLI (`tools/vpp/`) — `vpp doctor`, `vpp build`, `vpp run`, `vpp publish`. It finds `VideoPiper.sln` from anywhere in the repo and auto-selects the correct target per OS, so you don't have to set `Cwd: video-piper` or remember TFMs. If the CLI isn't installed, fall back to running `dotnet build/run/publish` with `Cwd: video-piper`.
 2. **Multi-Targeting**: The project uses conditional `<TargetFrameworks>` (WinAppSDK on Windows, `net10.0` Skia desktop elsewhere). Do not revert to a singular `<TargetFramework>`. When adding targets or OS-specific config, keep the existing MSBuild conditions intact.
 3. **Platform-Conditional Code**: Use Uno's predefined symbols (`WINDOWS`, `__WASM__`, `HAS_UNO`, etc.) for platform-specific APIs. Windows-only APIs such as `Windows.Storage.Pickers`, `WinRT.Interop`, and in-app `MediaElement` playback must be wrapped in `#if WINDOWS` so the `net10.0` Skia target still compiles on Linux/macOS — see `FolderPickerService.cs` and `MainPage.cs` (player card) for the pattern.
 4. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
