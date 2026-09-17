@@ -4,12 +4,21 @@ using System.Text.Json;
 namespace VideoPiper.Services;
 
 /// <summary>
-/// Persists user preferences (save path) as JSON in the app's local data folder,
+/// Which download mode the app is in: one-off downloads, or a managed library.
+/// </summary>
+public enum AppMode
+{
+    Simple,
+    Library,
+}
+
+/// <summary>
+/// Persists user preferences as JSON in the app's local data folder,
 /// replacing the previous localStorage-based storage.
 /// </summary>
 public static class PreferencesService
 {
-    private sealed record Prefs(string? SavePath);
+    private sealed record Prefs(string? SavePath, AppMode? Mode);
 
     private static string FilePath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "preferences.json");
 
@@ -35,11 +44,44 @@ public static class PreferencesService
     {
         try
         {
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path)));
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode)));
         }
         catch
         {
             // Best effort: preferences are non-critical.
+        }
+    }
+
+    public static AppMode GetAppMode() => Load()?.Mode ?? AppMode.Simple;
+
+    public static void SetAppMode(AppMode mode)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode)));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    private static Prefs? Load()
+    {
+        try
+        {
+            if (!File.Exists(FilePath))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<Prefs>(File.ReadAllText(FilePath));
+        }
+        catch
+        {
+            return null;
         }
     }
     private static string ThemeFile => Path.Combine(ApplicationData.Current.LocalFolder.Path, "theme.json");
