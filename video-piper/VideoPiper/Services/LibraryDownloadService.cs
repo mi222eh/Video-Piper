@@ -89,12 +89,15 @@ public static class LibraryDownloadService
         string? playlistTitle,
         MediaKind kind,
         Action<LibraryItem>? onItemChanged,
+        Action<int, int>? onItemPosition,
         CancellationToken cancellationToken)
     {
+        var list = entries.ToList();
         var ytDlpPath = await ResolveYtDlpAsync();
 
-        foreach (var entry in entries)
+        for (var index = 0; index < list.Count; index++)
         {
+            var entry = list[index];
             cancellationToken.ThrowIfCancellationRequested();
 
             var item = new LibraryItem
@@ -112,6 +115,12 @@ public static class LibraryDownloadService
             store.AddOrUpdate(item);
             await store.SaveAsync();
             onItemChanged?.Invoke(item);
+
+            // Report job position (e.g. "2/5") for multi-entry downloads.
+            if (list.Count > 1)
+            {
+                onItemPosition?.Invoke(index + 1, list.Count);
+            }
 
             try
             {

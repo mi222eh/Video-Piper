@@ -63,7 +63,7 @@ public partial class App : Application
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             if (appWindow is not null)
             {
-                appWindow.Resize(new Windows.Graphics.SizeInt32(540, 580));
+                appWindow.Resize(new Windows.Graphics.SizeInt32(620, 720));
             }
         }
 #endif

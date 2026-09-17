@@ -18,7 +18,7 @@ public enum AppMode
 /// </summary>
 public static class PreferencesService
 {
-    private sealed record Prefs(string? SavePath, AppMode? Mode);
+    private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot);
 
     private static string FilePath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "preferences.json");
 
@@ -45,7 +45,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot)));
         }
         catch
         {
@@ -60,7 +60,22 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot)));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    public static string? GetLibraryRoot() => Load()?.LibraryRoot;
+
+    public static void SetLibraryRoot(string? root)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root)));
         }
         catch
         {
