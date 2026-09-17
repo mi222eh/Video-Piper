@@ -6,11 +6,11 @@ Welcome to the **Video-Piper** repository. This document provides essential proj
 
 ## 1. Project Overview
 
-**Video-Piper** is a lightweight Windows desktop application for downloading YouTube videos as MP3 audio files. Built with **C#**, **.NET 10**, and **Uno Platform (WinUI 3)**.
+**Video-Piper** is a cross-platform desktop application for downloading YouTube videos as MP3 audio files. Built with **C#**, **.NET 10**, and **Uno Platform**. The primary target is Windows (native WinUI 3 / WinAppSDK), with an additional Skia-rendered desktop target that builds and runs on Linux and macOS.
 
 ### Key Capabilities
 - **Direct YouTube to MP3 download**: Spawns `yt-dlp` subprocesses directly through `System.Diagnostics.Process` with real-time progress parsing from stdout/stderr.
-- **Native folder picker**: Uses `Windows.Storage.Pickers.FolderPicker` for native Windows folder selection dialogs.
+- **Folder picker**: Native `Windows.Storage.Pickers.FolderPicker` on Windows; on non-Windows targets the UI falls back to manual path entry / default Music folder.
 - **In-app tool installer**: Downloads and installs missing dependencies (yt-dlp.exe, ffmpeg.exe) into the app's local data folder.
 - **Dark/Light theme toggle**: Built-in theme switching with persisted preference.
 - **Swedish localization**: All user-facing strings in Swedish (e.g., *"YouTube Länk"*, *"Spara till"*, *"Ladda ner MP3"*).
@@ -64,7 +64,8 @@ Video-Piper/
 | **UI Framework** | Uno Platform (WinUI 3 + C# Markup) | 6.6.x |
 | **Runtime** | .NET | 10.0 |
 | **Language** | C# | 13 |
-| **Windows SDK** | WinAppSDK | 1.7.x |
+| **Windows SDK** | WinAppSDK (WinUI 3 target) | 1.7.x |
+| **Renderer** | Skia Renderer (`SkiaRenderer` UnoFeature) | cross-platform desktop |
 | **Package Manager** | MSBuild Central Package Management | — |
 
 ---
@@ -75,17 +76,32 @@ Video-Piper/
 
 ### Prerequisites
 - **.NET 10 SDK** — https://dotnet.microsoft.com/download
-- **Windows 10+** (version 2004+)
+- **Windows**: Windows 10+ (version 2004+) for the native WinUI 3 target; **or Linux/macOS** with GTK 3 dev packages for the Skia desktop target (e.g., `dnf install gtk3-devel` on Fedora/Nobara)
 - **yt-dlp & ffmpeg**: Available on system PATH for download functionality (or use in-app installer)
 
 ### Common Commands
 
 | Task | Command (from `video-piper/`) |
 |:---|:---|
-| **Build Solution** | `dotnet build VideoPiper.sln` |
-| **Build Project** | `dotnet build VideoPiper/VideoPiper.csproj` |
+| **Build (auto-selects target per OS)** | `dotnet build VideoPiper.sln` |
+| **Build Windows target** (Windows host only) | `dotnet build -f net10.0-windows10.0.26100` |
+| **Build Skia desktop target** (any OS) | `dotnet build -f net10.0` |
 | **Run** | `dotnet run --project VideoPiper/VideoPiper.csproj` |
-| **Publish (standalone exe)** | `dotnet publish VideoPiper/VideoPiper.csproj -c Release -r win-x64 --self-contained true -o ./publish` |
+| **Publish Windows exe** | `dotnet publish -f net10.0-windows10.0.26100 -c Release -r win-x64 --self-contained true -o ./publish` |
+
+### Target Frameworks & Multi-Targeting
+
+The project uses **conditional multi-targeting** in `VideoPiper/VideoPiper.csproj`:
+
+| TFM | Renderer | Builds on |
+|:---|:---|:---|
+| `net10.0-windows10.0.26100` | WinUI 3 / WinAppSDK (native) | **Windows only** |
+| `net10.0` | Skia Renderer | Windows, Linux, macOS |
+
+- On a **Windows host**, only the WinAppSDK target is built (matching previous behavior).
+- On **Linux/macOS hosts**, only the `net10.0` Skia desktop target is built. The WinAppSDK TFM is excluded because Uno cannot build it off-Windows (`UNOB0014`).
+- Do **not** revert to a singular `<TargetFramework>` — use `<TargetFrameworks>` with the OS conditions shown in the csproj.
+- Cross-compiling the WinAppSDK target from Linux via `-p:EnableWindowsTargeting=true` is not supported by Uno.WinUI (MSB4006) — Windows builds must run on a Windows host or `windows-latest` CI runner.
 
 ---
 
@@ -144,7 +160,8 @@ This project was migrated from a Deno Desktop (TypeScript) backend to a native C
 ## 7. Guidelines for AI Agents
 
 1. **Working Directory Awareness**: Ensure commands like `dotnet build`, `dotnet run` are executed with `Cwd: video-piper`.
-2. **Single Target Framework**: The project targets only `net10.0-windows10.0.26100` — use singular `TargetFramework` in .csproj files.
-3. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
-4. **Swedish Strings**: Preserve Swedish localization for all user-facing strings. Do not introduce English-only strings without providing Swedish translations.
+2. **Multi-Targeting**: The project uses conditional `<TargetFrameworks>` (WinAppSDK on Windows, `net10.0` Skia desktop elsewhere). Do not revert to a singular `<TargetFramework>`. When adding targets or OS-specific config, keep the existing MSBuild conditions intact.
+3. **Platform-Conditional Code**: Use Uno's predefined symbols (`WINDOWS`, `__WASM__`, `HAS_UNO`, etc.) for platform-specific APIs. Windows-only APIs such as `Windows.Storage.Pickers` and `WinRT.Interop` must be wrapped in `#if WINDOWS` so the `net10.0` Skia target still compiles on Linux/macOS — see `FolderPickerService.cs` for the pattern.
+4. **Clean Code**: Follow C# conventions. Use `async`/`await` properly, avoid blocking calls on UI thread, and prefer `ICommand` for button bindings.
+5. **Swedish Strings**: Preserve Swedish localization for all user-facing strings. Do not introduce English-only strings without providing Swedish translations.
 

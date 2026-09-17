@@ -1,6 +1,14 @@
 <Project Sdk="Uno.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.26100</TargetFramework>
+    <!--
+      Multi-targeting:
+      - net10.0-windows10.0.26100: WinAppSDK (WinUI 3) target, Windows-only.
+        Gated so non-Windows hosts never try to compile it (Uno error UNOB0014).
+        Set EnableWindowsTargeting=true to cross-compile the Windows TFM from Linux/macOS CI.
+      - net10.0: Skia-rendered desktop target, builds and runs on Windows, Linux and macOS.
+    -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows')) or '$(EnableWindowsTargeting)' == 'true'">net10.0-windows10.0.26100</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('Windows')) and '$(EnableWindowsTargeting)' != 'true'">$(TargetFrameworks);net10.0</TargetFrameworks>
 
     <OutputType>Exe</OutputType>
     <UnoSingleProject>true</UnoSingleProject>
