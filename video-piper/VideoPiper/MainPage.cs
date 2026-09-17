@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using VideoPiper.Services;
 using VideoPiper.ViewModels;
 
 namespace VideoPiper;
@@ -303,23 +304,49 @@ public sealed partial class MainPage : Page
 
     private static Grid BuildItemsList(LibraryViewModel vm)
     {
-        var listView = new ListView()
-            .Grid(row: 1)
+        var libraryList = new ListView()
+            .Grid(row: 2)
             .ItemsSource(x => x.Binding(() => vm.Items))
-            .SelectedItem(x => x.Binding(() => vm.SelectedItem));
-        listView.ItemTemplate = Application.Current.Resources["LibraryItemTemplate"] as DataTemplate;
+            .SelectedItem(x => x.Binding(() => vm.SelectedItem))
+            .Visibility(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? Visibility.Collapsed : Visibility.Visible));
+        libraryList.ItemTemplate = Application.Current.Resources["LibraryItemTemplate"] as DataTemplate;
+
+        var searchList = new ListView()
+            .Grid(row: 2)
+            .ItemsSource(x => x.Binding(() => vm.SearchResults))
+            .IsItemClickEnabled(true)
+            .Visibility(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? Visibility.Visible : Visibility.Collapsed));
+        searchList.ItemTemplate = Application.Current.Resources["SearchResultTemplate"] as DataTemplate;
+        searchList.ItemClick += (_, e) =>
+        {
+            if (e.ClickedItem is SearchResult result)
+            {
+                vm.DownloadSearchResultCommand.Execute(result);
+            }
+        };
 
         return new Grid()
             .RowDefinitions(
-                new RowDefinition { Height = GridLength.Auto },
-                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) },
-                new RowDefinition { Height = GridLength.Auto }
+                new RowDefinition { Height = GridLength.Auto }, // Search box
+                new RowDefinition { Height = GridLength.Auto }, // List header + resync
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }, // Items / search results
+                new RowDefinition { Height = GridLength.Auto } // Actions for selected item
             )
             .RowSpacing(8)
             .Children(
+                // Search box (debounced YouTube search)
+                new TextBox()
+                    .Grid(row: 0)
+                    .PlaceholderText("Sök på YouTube...")
+                    .Text(x => x.Binding(() => vm.SearchQuery))
+                    .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                    .FontSize(13)
+                    .Padding(new Thickness(12, 8, 12, 8))
+                    .CornerRadius(new CornerRadius(6)),
+
                 // List header + resync
                 new Grid()
-                    .Grid(row: 0)
+                    .Grid(row: 1)
                     .ColumnDefinitions(
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                         new ColumnDefinition { Width = GridLength.Auto }
@@ -348,12 +375,13 @@ public sealed partial class MainPage : Page
                             )
                     ),
 
-                // Items (row template from App.xaml resources)
-                listView,
+                // Library items + search results (same cell; visibility toggled by HasSearchResults)
+                libraryList,
+                searchList,
 
-                // Actions for the selected item
+                // Actions for the selected library item
                 new Grid()
-                    .Grid(row: 2)
+                    .Grid(row: 3)
                     .ColumnDefinitions(
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },

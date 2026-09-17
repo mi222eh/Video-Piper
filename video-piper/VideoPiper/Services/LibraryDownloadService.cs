@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using VideoPiper.Models;
 
@@ -26,57 +25,16 @@ public static class LibraryDownloadService
     {
         var ytDlpPath = await ResolveYtDlpAsync();
 
-        // First probe: is this a playlist?
+        // First probe: is this a playlist? (flat-playlist mode is fast — no stream resolution)
         var flatJson = await RunYtDlpAsync(ytDlpPath, $"--flat-playlist -J --no-warnings \"{url}\"", cancellationToken);
-        using var doc = JsonDocument.Parse(flatJson);
-        var root = doc.RootElement;
-
-        JsonElement? entriesElement = null;
-        if (root.TryGetProperty("entries", out var e) && e.ValueKind == JsonValueKind.Array)
+        if (YtDlpJson.TryParsePlaylist(flatJson) is { } playlist && playlist.Entries.Count > 0)
         {
-            entriesElement = e;
-        }
-        if (entriesElement is { } entries && entries.GetArrayLength() > 0)
-        {
-            var playlistTitle = GetString(root, "title");
-            var entriesList = new List<MediaEntry>();
-            foreach (var entry in entries.EnumerateArray())
-            {
-                var id = GetString(entry, "id");
-                if (string.IsNullOrEmpty(id))
-                {
-                    continue;
-                }
-
-                // Flat-playlist entries often carry the bare video id in "url".
-                var rawUrl = GetString(entry, "url");
-                var urlValue = rawUrl is null || !rawUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? $"https://www.youtube.com/watch?v={id}"
-                    : rawUrl;
-                entriesList.Add(new MediaEntry(
-                    Id: id,
-                    Title: GetString(entry, "title") ?? id,
-                    Uploader: GetString(entry, "channel") ?? GetString(entry, "uploader"),
-                    DurationSeconds: GetDouble(entry, "duration"),
-                    Url: urlValue));
-            }
-
-            return (entriesList, playlistTitle);
+            return playlist;
         }
 
         // Single video: full metadata for accurate uploader/duration.
         var fullJson = await RunYtDlpAsync(ytDlpPath, $"-J --no-warnings \"{url}\"", cancellationToken);
-        using var fullDoc = JsonDocument.Parse(fullJson);
-        var single = fullDoc.RootElement;
-        return (new List<MediaEntry>
-        {
-            new(
-                Id: GetString(single, "id") ?? url.GetHashCode().ToString("x"),
-                Title: GetString(single, "title") ?? url,
-                Uploader: GetString(single, "channel") ?? GetString(single, "uploader"),
-                DurationSeconds: GetDouble(single, "duration"),
-                Url: url),
-        }, null);
+        return (new List<MediaEntry> { YtDlpJson.ParseSingle(fullJson) }, null);
     }
 
     /// <summary>
@@ -229,17 +187,4 @@ public static class LibraryDownloadService
         }
     }
 
-    private static string? GetString(JsonElement element, string name)
-    {
-        return element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-    }
-
-    private static double? GetDouble(JsonElement element, string name)
-    {
-        return element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetDouble()
-            : null;
-    }
 }

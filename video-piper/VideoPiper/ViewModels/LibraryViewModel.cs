@@ -26,8 +26,12 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private LibraryItem? _playingItem;
     private LibraryItem? _selectedItem;
     private CancellationTokenSource? _downloadCts;
+    private CancellationTokenSource? _searchCts;
 
     public ObservableCollection<LibraryItem> Items { get; } = new();
+
+    /// <summary>Search results (empty when no search has run or the query was cleared).</summary>
+    public ObservableCollection<SearchResult> SearchResults { get; } = new();
 
     private readonly RelayCommand _browseCommand;
     private readonly RelayCommand _downloadCommand;
@@ -36,6 +40,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private readonly RelayCommand _removeSelectedCommand;
     private readonly RelayCommand _deleteWithFileSelectedCommand;
     private readonly RelayCommand _resyncCommand;
+    private readonly ParameterizedRelayCommand _downloadSearchResultCommand;
 
     public ICommand BrowseCommand => _browseCommand;
     public ICommand DownloadCommand => _downloadCommand;
@@ -44,6 +49,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     public ICommand RemoveSelectedCommand => _removeSelectedCommand;
     public ICommand DeleteWithFileSelectedCommand => _deleteWithFileSelectedCommand;
     public ICommand ResyncCommand => _resyncCommand;
+    public ICommand DownloadSearchResultCommand => _downloadSearchResultCommand;
 
     public LibraryViewModel()
     {
@@ -54,6 +60,131 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         _removeSelectedCommand = new RelayCommand(RemoveSelectedAsync, () => SelectedItem is not null);
         _deleteWithFileSelectedCommand = new RelayCommand(DeleteWithFileSelectedAsync, () => SelectedItem is not null);
         _resyncCommand = new RelayCommand(ResyncAsync, () => !IsDownloading);
+        _downloadSearchResultCommand = new ParameterizedRelayCommand(DownloadSearchResultAsync, p => p is SearchResult && !IsBusy);
+    }
+
+    private string _searchQuery = string.Empty;
+    private bool _isSearching;
+
+    /// <summary>Debounced search box text — typing triggers a YouTube search after a short pause.</summary>
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            if (!Set(ref _searchQuery, value))
+            {
+                return;
+            }
+
+            // Debounce: cancel any in-flight/pending search and start a fresh one.
+            _searchCts?.Cancel();
+            var cts = new CancellationTokenSource();
+            _searchCts = cts;
+            _ = RunSearchAsync(value, cts.Token);
+        }
+    }
+
+    public bool IsSearching
+    {
+        get => _isSearching;
+        private set
+        {
+            if (Set(ref _isSearching, value))
+            {
+                _downloadSearchResultCommand.RefreshCanExecute();
+            }
+        }
+    }
+
+    public IReadOnlyList<SearchResult> SearchResultsView => SearchResults;
+
+    /// <summary>True while a search is in flight or has produced results — the tab shows the search list.</summary>
+    public bool HasSearchResults
+    {
+        get => _hasSearchResults;
+        private set
+        {
+            if (Set(ref _hasSearchResults, value))
+            {
+                OnPropertyChanged(nameof(HasSearchResults));
+            }
+        }
+    }
+
+    private bool _hasSearchResults;
+
+    private async Task RunSearchAsync(string query, CancellationToken cancellationToken)
+    {
+        var trimmed = query.Trim();
+        if (trimmed.Length < 2)
+        {
+            OnUi(() =>
+            {
+                SearchResults.Clear();
+                HasSearchResults = false;
+            });
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(400, cancellationToken); // debounce window
+
+            IsSearching = true;
+            HasSearchResults = true;
+            var results = await SearchService.SearchAsync(trimmed, cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            OnUi(() =>
+            {
+                SearchResults.Clear();
+                foreach (var result in results)
+                {
+                    SearchResults.Add(result);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer query — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                OnUi(() => Error = $"Sökningen misslyckades: {ex.Message}");
+            }
+        }
+        finally
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                IsSearching = false;
+            }
+        }
+    }
+
+    private async Task DownloadSearchResultAsync(object? parameter)
+    {
+        if (parameter is not SearchResult result)
+        {
+            return;
+        }
+
+        // Route through the normal download pipeline with a single synthesized entry.
+        var entry = new MediaEntry(
+            Id: result.Id,
+            Title: result.Title,
+            Uploader: result.Uploader,
+            DurationSeconds: result.DurationSeconds,
+            Url: $"https://www.youtube.com/watch?v={result.Id}");
+
+        await DownloadManyCoreAsync(new[] { entry }, playlistTitle: null);
     }
 
     /// <summary>The currently selected item in the list (two-way bound to the ListView).</summary>
@@ -239,9 +370,31 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             }
 
             IsFetching = false;
-            IsDownloading = true;
-            _downloadCts = new CancellationTokenSource();
+            await DownloadManyCoreAsync(entries, playlistTitle);
+        }
+        catch (OperationCanceledException)
+        {
+            Error = "Nedladdningen avbröts.";
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            IsFetching = false;
+        }
+    }
 
+    /// <summary>Downloads a resolved set of entries into the library, tracking per-item progress.</summary>
+    private async Task DownloadManyCoreAsync(IReadOnlyList<MediaEntry> entries, string? playlistTitle)
+    {
+        Error = null;
+        IsDownloading = true;
+        _downloadCts = new CancellationTokenSource();
+
+        try
+        {
             await LibraryDownloadService.DownloadManyAsync(
                 _store,
                 entries,
@@ -255,8 +408,6 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 }),
                 (current, total) => OnUi(() => JobPosition = $"{current}/{total}"),
                 _downloadCts.Token);
-
-            Error = null;
         }
         catch (OperationCanceledException)
         {
@@ -268,7 +419,6 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         }
         finally
         {
-            IsFetching = false;
             IsDownloading = false;
             JobTitle = null;
             JobPercent = 0;
