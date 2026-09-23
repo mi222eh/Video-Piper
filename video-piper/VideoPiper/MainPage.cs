@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using VideoPiper.Models;
 using VideoPiper.Services;
 using VideoPiper.ViewModels;
 
@@ -282,10 +283,13 @@ public sealed partial class MainPage : Page
             .Visibility(x => x.Binding(() => vm.IsPlayerVisible).Convert(v => v ? Visibility.Visible : Visibility.Collapsed))
             .Child(
 #if WINDOWS
-                new MediaElement()
-                    .Source(x => x.Binding(() => vm.PlayingItem?.FilePath))
+                new MediaPlayerElement()
                     .AutoPlay(true)
-                    .ControlsVisibility(MediaControlsVisibility.Visible)
+                    .AreTransportControlsEnabled(true)
+                    .Source(x => x.Binding(() => vm.PlayingItem).Convert(item =>
+                        string.IsNullOrEmpty(item?.FilePath)
+                            ? null!
+                            : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(item.FilePath))))
 #else
                 // No in-app media playback on Skia targets; show the file name instead.
                 new StackPanel()

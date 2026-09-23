@@ -4,8 +4,7 @@
        xmlns:models="using:VideoPiper.Models"
        xmlns:services="using:VideoPiper.Services">
     <Application.Resources>
-        <!-- Library list row: one media item (kind icon, title, meta/status) -->
-        <DataTemplate x:Key="LibraryItemTemplate" x:DataType="models:LibraryItem">
+        <DataTemplate x:Key="LibraryItemTemplate">
             <Border Margin="0,2,0,2" Padding="12,10,12,10" CornerRadius="10"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -30,8 +29,7 @@
             </Border>
         </DataTemplate>
 
-        <!-- Search result row: title, uploader/duration, download button (command inherited from the list DataContext) -->
-        <DataTemplate x:Key="SearchResultTemplate" x:DataType="services:SearchResult">
+        <DataTemplate x:Key="SearchResultTemplate">
             <Grid Padding="4,6,4,6" ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
