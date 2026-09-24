@@ -94,22 +94,31 @@ public static class ToolInstallerService
         Progress?.Invoke("Extraherar ffmpeg...", null);
         try
         {
+            var foundFfmpeg = false;
             using var archive = ZipFile.OpenRead(zipPath);
             foreach (var entry in archive.Entries)
             {
-                if (!entry.FullName.EndsWith("ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
+                if (entry.FullName.EndsWith("ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    var target = Path.Combine(SystemService.ToolsDirectory, "ffmpeg.exe");
+                    await using var dest = File.Create(target);
+                    await using var src = entry.Open();
+                    await src.CopyToAsync(dest);
+                    foundFfmpeg = true;
                 }
-
-                var target = Path.Combine(SystemService.ToolsDirectory, "ffmpeg.exe");
-                await using var dest = File.Create(target);
-                await using var src = entry.Open();
-                await src.CopyToAsync(dest);
-                return;
+                else if (entry.FullName.EndsWith("ffprobe.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    var target = Path.Combine(SystemService.ToolsDirectory, "ffprobe.exe");
+                    await using var dest = File.Create(target);
+                    await using var src = entry.Open();
+                    await src.CopyToAsync(dest);
+                }
             }
 
-            throw new ToolInstallException("ffmpeg.exe hittades inte i arkivet.");
+            if (!foundFfmpeg)
+            {
+                throw new ToolInstallException("ffmpeg.exe hittades inte i arkivet.");
+            }
         }
         finally
         {

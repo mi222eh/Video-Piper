@@ -26,7 +26,8 @@ standard-library only and shells out to `dotnet`.
 | `vpp build --clean` | `dotnet clean` first, then build. |
 | `vpp run` | Build and launch the app. |
 | `vpp publish` | Publish a standalone executable (defaults to `win-x64`, Release). |
-| `vpp doctor` | Check prerequisites: `.NET` SDK, `yt-dlp`, `ffmpeg`, and that it can find the project. |
+| `vpp installer` | Package the standalone Release into a Windows installer via Inno Setup. |
+| `vpp doctor` | Check prerequisites: `.NET` SDK, `yt-dlp`, `ffmpeg`, `Inno Setup`, and project detection. |
 
 Useful flags on `build`/`run`: `-c/--configuration` (default `Debug`) and
 `-f/--framework` to override the auto-selected target framework.
@@ -40,6 +41,7 @@ vpp build -c Release    # Release build
 vpp run                 # launch the app
 vpp publish             # -> <project>/publish (win-x64, framework-dependent)
 vpp publish --self-contained   # self-contained win-x64 bundle
+vpp installer           # -> installer/output/VideoPiper-Setup-1.0.0.exe
 ```
 
 ## How it finds the project

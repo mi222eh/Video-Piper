@@ -1,2 +1,9 @@
 # Local agent state (per-machine memory/logs) — not shared project knowledge
 .openhands/
+
+# Installer build output (setup executables)
+installer/output/
+
+# Python cache
+__pycache__/
+*.py[cod]

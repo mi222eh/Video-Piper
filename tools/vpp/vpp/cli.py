@@ -121,6 +121,82 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return run_dotnet(cmd, root)
 
 
+def find_iscc() -> str | None:
+    """Locate the Inno Setup compiler (ISCC.exe)."""
+    found = shutil.which("iscc")
+    if found:
+        return found
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 6" / "ISCC.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "Inno Setup 6" / "ISCC.exe",
+        Path(os.environ.get("ProgramFiles", "")) / "Inno Setup 6" / "ISCC.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 7" / "ISCC.exe",
+        Path(os.environ.get("ProgramFiles", "")) / "Inno Setup 7" / "ISCC.exe",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def cmd_installer(args: argparse.Namespace) -> int:
+    """Build the standalone release and package it into a Windows installer."""
+    if platform.system() != "Windows":
+        print("error: building the Windows installer is only supported on Windows.", file=sys.stderr)
+        return 1
+
+    root = find_project_root()
+    repo_root = root if (root / "installer").is_dir() else root.parent
+    installer_dir = repo_root / "installer"
+    publish_dir = root / "publish"
+    exe_path = publish_dir / "VideoPiper.exe"
+
+    if args.publish or not exe_path.is_file():
+        print("Publishing standalone release...", file=sys.stderr)
+        pub_args = argparse.Namespace(
+            framework=WINDOWS_TFM,
+            configuration="Release",
+            runtime="win-x64",
+            output=str(publish_dir),
+            self_contained=True,
+        )
+        rc = cmd_publish(pub_args)
+        if rc != 0:
+            return rc
+
+    iscc = find_iscc()
+    if not iscc:
+        print(
+            "error: Inno Setup compiler (ISCC.exe) not found.\n"
+            "       Install it via `winget install JRSoftware.InnoSetup` or from https://jrsoftware.org/isdl.php",
+            file=sys.stderr,
+        )
+        return 1
+
+    iss_file = installer_dir / "VideoPiper.iss"
+    output_dir = Path(args.output).resolve() if args.output else installer_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    version = args.app_version
+
+    cmd = [
+        iscc,
+        "/Qp",
+        f"/DMyAppVersion={version}",
+        f"/DSourceDir={publish_dir}",
+        f"/O{output_dir}",
+        f"/FVideoPiper-Setup-{version}",
+        str(iss_file),
+    ]
+    print(f"$ {' '.join(cmd)}", file=sys.stderr)
+    rc = subprocess.call(cmd)
+    if rc == 0:
+        setup_exe = output_dir / f"VideoPiper-Setup-{version}.exe"
+        if setup_exe.is_file():
+            size_mb = setup_exe.stat().st_size / (1024 * 1024)
+            print(f"\nInstaller generated: {setup_exe} ({size_mb:.2f} MB)")
+    return rc
+
+
 def _check_tool(name: str, extra_paths: list[str]) -> tuple[bool, str]:
     """Return (found, location). Checks PATH then a few common install spots."""
     found = shutil.which(name)
@@ -151,6 +227,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         status = "[ OK ]" if found else "[MISS]"
         detail = loc if found else "not found (app can install it in-app, or add to PATH)"
         print(f"  {status} {tool:<10} {detail}")
+
+    # Inno Setup (optional, for installer)
+    iscc = find_iscc()
+    iscc_status = "[ OK ]" if iscc else "[INFO]"
+    iscc_detail = iscc if iscc else "not found (needed for `vpp installer`: `winget install JRSoftware.InnoSetup`)"
+    print(f"  {iscc_status} {'Inno Setup':<10} {iscc_detail}")
 
     # Project root sanity
     try:
@@ -198,7 +280,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Produce a self-contained bundle (default: framework-dependent).")
     p_pub.set_defaults(func=cmd_publish)
 
-    p_doc = sub.add_parser("doctor", help="Check prerequisites (.NET SDK, yt-dlp, ffmpeg).")
+    p_inst = sub.add_parser("installer", help="Build the Windows installer via Inno Setup.")
+    p_inst.add_argument("-v", "--app-version", default="1.0.0", help="Version string for installer (default: 1.0.0).")
+    p_inst.add_argument("-o", "--output", help="Output directory for the setup .exe (default: installer/output).")
+    p_inst.add_argument("--publish", action="store_true", help="Force a fresh `vpp publish` before packaging.")
+    p_inst.set_defaults(func=cmd_installer)
+
+    p_doc = sub.add_parser("doctor", help="Check prerequisites (.NET SDK, yt-dlp, ffmpeg, Inno Setup).")
     p_doc.set_defaults(func=cmd_doctor)
 
     return parser

@@ -21,6 +21,12 @@ public static class PreferencesService
 {
     private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot, MediaKind? Format);
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+    };
+
     private static string FilePath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "preferences.json");
 
     public static string? GetSavePath()
@@ -32,7 +38,7 @@ public static class PreferencesService
                 return null;
             }
 
-            var prefs = JsonSerializer.Deserialize<Prefs>(File.ReadAllText(FilePath));
+            var prefs = JsonSerializer.Deserialize<Prefs>(File.ReadAllText(FilePath), JsonOptions);
             return prefs?.SavePath;
         }
         catch
@@ -46,7 +52,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot, current?.Format)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot, current?.Format), JsonOptions));
         }
         catch
         {
@@ -61,7 +67,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot, current?.Format)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot, current?.Format), JsonOptions));
         }
         catch
         {
@@ -76,7 +82,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root, current?.Format)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root, current?.Format), JsonOptions));
         }
         catch
         {
@@ -92,7 +98,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, format)));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, format), JsonOptions));
         }
         catch
         {
@@ -109,7 +115,7 @@ public static class PreferencesService
                 return null;
             }
 
-            return JsonSerializer.Deserialize<Prefs>(File.ReadAllText(FilePath));
+            return JsonSerializer.Deserialize<Prefs>(File.ReadAllText(FilePath), JsonOptions);
         }
         catch
         {

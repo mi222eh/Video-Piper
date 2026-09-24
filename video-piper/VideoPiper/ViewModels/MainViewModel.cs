@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using System.Windows.Input;
 using VideoPiper.Models;
 using VideoPiper.Services;
 
@@ -16,6 +18,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private double _progressPercent;
     private string? _progressSpeed;
     private string? _progressMessage;
+    private string? _error;
     private string? _ytDlpVersion;
     private bool _downloadFinished;
     private bool _toolsReady = true;
@@ -28,6 +31,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private MediaKind _format = MediaKind.Audio;
 
     private readonly RelayCommand _downloadCommand;
+    private readonly RelayCommand _stopDownloadCommand;
     private readonly RelayCommand _installYtDlpCommand;
     private readonly RelayCommand _installFfmpegCommand;
     private CancellationTokenSource? _downloadCts;
@@ -35,6 +39,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand PasteCommand { get; }
     public ICommand BrowseCommand { get; }
     public ICommand DownloadCommand => _downloadCommand;
+    public ICommand StopDownloadCommand => _stopDownloadCommand;
+    public ICommand OpenFolderCommand { get; }
+    public ICommand ResetCommand { get; }
     public ICommand InstallYtDlpCommand => _installYtDlpCommand;
     public ICommand InstallFfmpegCommand => _installFfmpegCommand;
     public ICommand ToggleThemeCommand { get; }
@@ -44,6 +51,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
         BrowseCommand = new RelayCommand(BrowseAsync, () => !IsBusy);
         _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
+        _stopDownloadCommand = new RelayCommand(StopDownload, () => IsBusy);
+        OpenFolderCommand = new RelayCommand(OpenFolder);
+        ResetCommand = new RelayCommand(Reset);
         _installYtDlpCommand = new RelayCommand(() => InstallAsync("yt-dlp"), () => !IsBusy && !InstallYtDlpBusy && !InstallFfmpegBusy);
         _installFfmpegCommand = new RelayCommand(() => InstallAsync("ffmpeg"), () => !IsBusy && !InstallYtDlpBusy && !InstallFfmpegBusy);
         ToggleThemeCommand = new RelayCommand(ToggleThemeAsync);
@@ -116,12 +126,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsNormalNotBusy));
                 OnPropertyChanged(nameof(IsProgressIndeterminate));
                 _downloadCommand.RefreshCanExecute();
+                _stopDownloadCommand.RefreshCanExecute();
                 _installYtDlpCommand.RefreshCanExecute();
                 _installFfmpegCommand.RefreshCanExecute();
                 (PasteCommand as RelayCommand)?.RefreshCanExecute();
                 (BrowseCommand as RelayCommand)?.RefreshCanExecute();
             }
         }
+    }
+
+    public string? Error
+    {
+        get => _error;
+        private set => Set(ref _error, value);
     }
 
     public bool ShowProgress
@@ -310,6 +327,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void StopDownload()
+    {
+        _downloadCts?.Cancel();
+        OnUi(() =>
+        {
+            ProgressLabel = "Avbruten";
+            ProgressMessage = "Nedladdningen avbröts av användaren.";
+        });
+    }
+
+    private void OpenFolder()
+    {
+        var folder = string.IsNullOrWhiteSpace(SavePath)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)
+            : SavePath;
+
+        if (!Directory.Exists(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = folder,
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Ignore if unable to open
+        }
+    }
+
+    private void Reset()
+    {
+        DownloadFinished = false;
+        ShowProgress = false;
+        ProgressPercent = 0;
+        ProgressSpeed = null;
+        ProgressMessage = null;
+        Error = null;
+    }
+
     private async Task DownloadAsync()
     {
         if (string.IsNullOrWhiteSpace(Link))
@@ -319,6 +381,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         if (!ToolsReady)
         {
+            Error = "yt-dlp eller ffmpeg saknas. Hämta verktygen först.";
             ProgressMessage = "Ett fel uppstod: yt-dlp eller ffmpeg saknas. Hämta verktygen först.";
             ShowProgress = true;
             ProgressLabel = "Ett fel uppstod";
@@ -332,6 +395,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ProgressSpeed = null;
         ProgressLabel = "Initierar...";
         ProgressMessage = "Startar nedladdning...";
+        Error = null;
         _downloadCts = new CancellationTokenSource();
 
         try
@@ -339,10 +403,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var url = CleanUrl(Link.Trim());
             await DownloadService.RunAsync(url, SavePath, Format, _downloadCts.Token, OnProgress);
         }
+        catch (OperationCanceledException)
+        {
+            OnUi(() =>
+            {
+                ProgressLabel = "Avbruten";
+                ProgressMessage = "Nedladdningen avbröts.";
+                ShowProgress = true;
+                DownloadFinished = false;
+            });
+        }
         catch (Exception ex)
         {
             OnUi(() =>
             {
+                Error = ex.Message;
                 ProgressLabel = "Kunde inte ladda ner";
                 ProgressMessage = ex.Message;
                 ShowProgress = true;

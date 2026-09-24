@@ -43,7 +43,7 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
 
-                <Button Grid.Column="1" Padding="10,6,10,6" CornerRadius="6" VerticalAlignment="Center">
+                <Button Grid.Column="1" Padding="10,6,10,6" CornerRadius="6" VerticalAlignment="Center" IsHitTestVisible="False">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE896;" FontSize="13"/>
                         <TextBlock Text="Ladda ner" FontSize="12" FontWeight="Medium"/>

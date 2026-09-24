@@ -85,9 +85,14 @@ public static class LibraryDownloadService
                 var folder = store.ResolveTargetFolder(entry.Uploader, playlistTitle);
                 Directory.CreateDirectory(folder);
 
+                var tools = await SystemService.CheckToolsAsync();
+                var ffmpegLocation = tools.Ffmpeg.Path is not null && File.Exists(tools.Ffmpeg.Path)
+                    ? $"--ffmpeg-location \"{Path.GetDirectoryName(tools.Ffmpeg.Path)}\" "
+                    : string.Empty;
+
                 var args = kind == MediaKind.Audio
-                    ? $"-x --audio-format mp3 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\""
-                    : $"-f \"{VideoFormat}\" --merge-output-format mp4 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\"";
+                    ? $"{ffmpegLocation}-x --audio-format mp3 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\""
+                    : $"{ffmpegLocation}-f \"{VideoFormat}\" --merge-output-format mp4 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\"";
 
                 await RunYtDlpAsync(ytDlpPath, args, cancellationToken, progress =>
                 {
@@ -140,6 +145,21 @@ public static class LibraryDownloadService
         };
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Kunde inte starta yt-dlp.");
+
+        using var reg = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Process may have already exited.
+            }
+        });
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);

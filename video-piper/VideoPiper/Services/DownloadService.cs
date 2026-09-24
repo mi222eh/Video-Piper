@@ -34,13 +34,17 @@ public static class DownloadService
             Message = "Startar nedladdning...",
         });
 
-        var ytDlpPath = (await SystemService.CheckToolsAsync()).YtDlp.Path ?? "yt-dlp";
+        var tools = await SystemService.CheckToolsAsync();
+        var ytDlpPath = tools.YtDlp.Path ?? "yt-dlp";
+        var ffmpegLocation = tools.Ffmpeg.Path is not null && File.Exists(tools.Ffmpeg.Path)
+            ? $"--ffmpeg-location \"{Path.GetDirectoryName(tools.Ffmpeg.Path)}\" "
+            : string.Empty;
 
         try
         {
             var args = kind == MediaKind.Audio
-                ? $"-x --audio-format mp3 --newline --progress \"{targetUrl}\""
-                : $"-f \"{VideoFormat}\" --merge-output-format mp4 --newline --progress \"{targetUrl}\"";
+                ? $"{ffmpegLocation}-x --audio-format mp3 --newline --progress \"{targetUrl}\""
+                : $"{ffmpegLocation}-f \"{VideoFormat}\" --merge-output-format mp4 --newline --progress \"{targetUrl}\"";
 
             var psi = new ProcessStartInfo(ytDlpPath, args)
             {
@@ -57,8 +61,24 @@ public static class DownloadService
                 throw new InvalidOperationException("Kunde inte starta yt-dlp.");
             }
 
-            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, kind, isError: false);
-            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, kind, isError: true);
+            using var reg = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // Process may have already exited.
+                }
+            });
+
+            var errorLines = new List<string>();
+            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, kind, isError: false, null);
+            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, kind, isError: true, errorLines);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(stdoutTask, stderrTask);
@@ -74,7 +94,11 @@ public static class DownloadService
             }
             else
             {
-                throw new InvalidOperationException($"yt-dlp avslutades med kod {process.ExitCode}");
+                var lastErr = errorLines.LastOrDefault(l => !string.IsNullOrWhiteSpace(l));
+                var msg = !string.IsNullOrWhiteSpace(lastErr)
+                    ? lastErr.Trim()
+                    : $"yt-dlp avslutades med kod {process.ExitCode}";
+                throw new InvalidOperationException(msg);
             }
         }
         catch (OperationCanceledException)
@@ -91,7 +115,8 @@ public static class DownloadService
         System.IO.StreamReader reader,
         Action<DownloadProgress> onProgress,
         MediaKind kind,
-        bool isError)
+        bool isError,
+        List<string>? errorLines)
     {
         string? line;
         while ((line = await reader.ReadLineAsync()) is not null)
@@ -100,6 +125,11 @@ public static class DownloadService
             if (trimmed.Length == 0)
             {
                 continue;
+            }
+
+            if (isError && errorLines is not null)
+            {
+                errorLines.Add(trimmed);
             }
 
             var match = ProgressRegex.Match(trimmed);

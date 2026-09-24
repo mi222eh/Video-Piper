@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using VideoPiper.Models;
@@ -41,6 +42,10 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private readonly RelayCommand _deleteWithFileSelectedCommand;
     private readonly RelayCommand _resyncCommand;
     private readonly ParameterizedRelayCommand _downloadSearchResultCommand;
+    private readonly RelayCommand _pasteCommand;
+    private readonly RelayCommand _closePlayerCommand;
+    private readonly RelayCommand _openFolderSelectedCommand;
+    private readonly RelayCommand _clearSearchCommand;
 
     public ICommand BrowseCommand => _browseCommand;
     public ICommand DownloadCommand => _downloadCommand;
@@ -50,17 +55,25 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     public ICommand DeleteWithFileSelectedCommand => _deleteWithFileSelectedCommand;
     public ICommand ResyncCommand => _resyncCommand;
     public ICommand DownloadSearchResultCommand => _downloadSearchResultCommand;
+    public ICommand PasteCommand => _pasteCommand;
+    public ICommand ClosePlayerCommand => _closePlayerCommand;
+    public ICommand OpenFolderSelectedCommand => _openFolderSelectedCommand;
+    public ICommand ClearSearchCommand => _clearSearchCommand;
 
     public LibraryViewModel()
     {
         _browseCommand = new RelayCommand(BrowseAsync, () => !IsDownloading);
         _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
-        _stopDownloadCommand = new RelayCommand(() => { _downloadCts?.Cancel(); return Task.CompletedTask; }, () => IsDownloading);
+        _stopDownloadCommand = new RelayCommand(() => { _downloadCts?.Cancel(); return Task.CompletedTask; }, () => IsBusy);
         _playSelectedCommand = new RelayCommand(PlaySelectedAsync, () => SelectedItem is { Status: ItemStatus.Complete } && !string.IsNullOrEmpty(SelectedItem.FilePath));
         _removeSelectedCommand = new RelayCommand(RemoveSelectedAsync, () => SelectedItem is not null);
         _deleteWithFileSelectedCommand = new RelayCommand(DeleteWithFileSelectedAsync, () => SelectedItem is not null);
         _resyncCommand = new RelayCommand(ResyncAsync, () => !IsDownloading);
         _downloadSearchResultCommand = new ParameterizedRelayCommand(DownloadSearchResultAsync, p => p is SearchResult && !IsBusy);
+        _pasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
+        _closePlayerCommand = new RelayCommand(ClosePlayer);
+        _openFolderSelectedCommand = new RelayCommand(OpenFolderSelectedAsync, () => SelectedItem is not null && !string.IsNullOrEmpty(SelectedItem.FilePath));
+        _clearSearchCommand = new RelayCommand(ClearSearch);
     }
 
     private string _searchQuery = string.Empty;
@@ -198,6 +211,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 Set(ref _selectedItem, value);
                 OnPropertyChanged(nameof(IsItemSelected));
                 _playSelectedCommand.RefreshCanExecute();
+                _openFolderSelectedCommand.RefreshCanExecute();
                 _removeSelectedCommand.RefreshCanExecute();
                 _deleteWithFileSelectedCommand.RefreshCanExecute();
             }
@@ -205,6 +219,10 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     }
 
     public bool IsItemSelected => _selectedItem is not null;
+
+    public bool HasItems => Items.Count > 0;
+
+    public bool ShowEmptyState => Items.Count == 0 && !HasSearchResults && !IsBusy;
 
     public string RootPath
     {
@@ -236,12 +254,20 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             if (Set(ref _kind, value))
             {
+                PreferencesService.SetFormat(value);
                 OnPropertyChanged(nameof(IsAudioSelected));
+                OnPropertyChanged(nameof(IsVideoSelected));
             }
         }
     }
 
-    public bool IsAudioSelected => _kind == MediaKind.Audio;
+    public bool IsAudioSelected
+    {
+        get => _kind == MediaKind.Audio;
+        set => Kind = value ? MediaKind.Audio : MediaKind.Video;
+    }
+
+    public bool IsVideoSelected => _kind == MediaKind.Video;
 
     public bool IsDownloading
     {
@@ -270,6 +296,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsBusy));
                 _downloadCommand.RefreshCanExecute();
                 _browseCommand.RefreshCanExecute();
+                _stopDownloadCommand.RefreshCanExecute();
                 _resyncCommand.RefreshCanExecute();
             }
         }
@@ -322,6 +349,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
 
     public async Task InitializeAsync()
     {
+        Kind = PreferencesService.GetFormat();
         var root = PreferencesService.GetLibraryRoot();
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
@@ -354,6 +382,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private async Task DownloadAsync()
     {
         Error = null;
+        _downloadCts = new CancellationTokenSource();
         IsFetching = true;
         JobTitle = "Hämtar metadata...";
         JobPercent = 0;
@@ -362,7 +391,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         try
         {
             var url = Url.Trim();
-            var (entries, playlistTitle) = await LibraryDownloadService.FetchEntriesAsync(url, CancellationToken.None);
+            var (entries, playlistTitle) = await LibraryDownloadService.FetchEntriesAsync(url, _downloadCts.Token);
             if (entries.Count == 0)
             {
                 Error = "Inga objekt hittades i länken.";
@@ -508,6 +537,59 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
+    private async Task PasteAsync()
+    {
+        try
+        {
+            var text = await Windows.ApplicationModel.DataTransfer.Clipboard.GetContent().GetTextAsync();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                Url = text.Trim();
+            }
+        }
+        catch
+        {
+            // Clipboard unavailable — ignore.
+        }
+    }
+
+    private void ClosePlayer()
+    {
+        PlayingItem = null;
+    }
+
+    private Task OpenFolderSelectedAsync()
+    {
+        var item = SelectedItem;
+        if (item is not null && !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.FilePath}\"") { UseShellExecute = true });
+            }
+            catch { }
+        }
+        else if (!string.IsNullOrEmpty(RootPath) && Directory.Exists(RootPath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{RootPath}\"") { UseShellExecute = true });
+            }
+            catch { }
+        }
+        return Task.CompletedTask;
+    }
+
+    private void ClearSearch()
+    {
+        _searchCts?.Cancel();
+        SearchQuery = string.Empty;
+        SearchResults.Clear();
+        HasSearchResults = false;
+        IsSearching = false;
+        OnPropertyChanged(nameof(ShowEmptyState));
+    }
+
     private void RefreshItems()
     {
         OnUi(() =>
@@ -517,6 +599,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             {
                 Items.Add(item);
             }
+            OnPropertyChanged(nameof(HasItems));
+            OnPropertyChanged(nameof(ShowEmptyState));
         });
     }
 

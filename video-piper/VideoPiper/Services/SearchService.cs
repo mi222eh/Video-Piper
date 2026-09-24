@@ -39,7 +39,8 @@ public static class SearchService
     public static async Task<IReadOnlyList<SearchResult>> SearchAsync(string query, CancellationToken cancellationToken)
     {
         var ytDlpPath = await ResolveYtDlpAsync();
-        var searchUrl = $"ytsearch{MaxResults}:{Uri.EscapeDataString(query)}";
+        var sanitized = query.Replace("\"", "").Trim();
+        var searchUrl = $"ytsearch{MaxResults}:{sanitized}";
         var json = await RunYtDlpAsync(ytDlpPath, $"--flat-playlist -J --no-warnings \"{searchUrl}\"", cancellationToken);
 
         // Search results share the playlist entries shape.
@@ -75,6 +76,22 @@ public static class SearchService
         };
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Kunde inte starta yt-dlp.");
+
+        using var reg = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Process may have already exited.
+            }
+        });
+
         var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);

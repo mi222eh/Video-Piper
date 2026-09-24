@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using VideoPiper.Models;
@@ -19,13 +20,25 @@ public sealed partial class MainPage : Page
         DataContext = simpleVm;
 
         var tabView = new TabView();
-        tabView.Padding = new Thickness(16, 8, 16, 12);
+        tabView.IsAddTabButtonVisible = false;
+        tabView.Padding = new Thickness(0, 8, 0, 0);
         tabView.TabItems.Add(BuildSimpleTab(simpleVm));
         tabView.TabItems.Add(BuildLibraryTab(libraryVm));
 
+        var rootGrid = new Grid()
+            .Padding(new Thickness(16, 12, 16, 12))
+            .RowDefinitions(
+                new RowDefinition { Height = GridLength.Auto }, // App Header
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } // TabView
+            )
+            .Children(
+                BuildHeader(simpleVm).Grid(row: 0),
+                tabView.Grid(row: 1)
+            );
+
         this
             .Background(ThemeResource.Get<Brush>("ApplicationPageBackgroundThemeBrush"))
-            .Content(tabView);
+            .Content(rootGrid);
 
         _ = simpleVm.InitializeAsync();
         _ = libraryVm.InitializeAsync();
@@ -35,43 +48,37 @@ public sealed partial class MainPage : Page
     {
         var tab = new TabViewItem();
         tab.Header = "Nedladdning";
+        tab.IsClosable = false;
         tab.Content =
-                new Grid()
-                    .RowDefinitions(
-                        new RowDefinition { Height = GridLength.Auto },
-                        new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }
-                    )
-                    .Children(
-                        BuildHeader(vm).Grid(row: 0),
-                        new ScrollViewer()
-                            .Grid(row: 1)
-                            .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
-                            .HorizontalScrollBarVisibility(ScrollBarVisibility.Disabled)
-                            .Content(
-                                new Grid()
-                                    .MaxWidth(480)
-                                    .HorizontalAlignment(HorizontalAlignment.Center)
-                                    .VerticalAlignment(VerticalAlignment.Center)
-                                    .Padding(new Thickness(16, 20, 16, 20))
-                                    .RowSpacing(14)
-                                    .RowDefinitions(
-                                        new RowDefinition { Height = GridLength.Auto }, // Missing Tools Card
-                                        new RowDefinition { Height = GridLength.Auto }, // Link Field
-                                        new RowDefinition { Height = GridLength.Auto }, // Save Path Field
-                                        new RowDefinition { Height = GridLength.Auto }, // Format Toggle (MP3/MP4)
-                                        new RowDefinition { Height = GridLength.Auto }, // Progress Card
-                                        new RowDefinition { Height = GridLength.Auto }  // Download Action Button
-                                    )
-                                    .Children(
-                                        BuildMissingToolsCard(vm).Grid(row: 0),
-                                        BuildLinkField(vm).Grid(row: 1),
-                                        BuildSavePathField(vm).Grid(row: 2),
-                                        BuildSimpleFormatToggle(vm).Grid(row: 3),
-                                        BuildProgressCard(vm).Grid(row: 4),
-                                        BuildDownloadButton(vm).Grid(row: 5)
-                                    )
-                            )
-                    );
+            new ScrollViewer()
+                .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
+                .HorizontalScrollBarVisibility(ScrollBarVisibility.Disabled)
+                .Content(
+                    new Grid()
+                        .MaxWidth(480)
+                        .HorizontalAlignment(HorizontalAlignment.Center)
+                        .VerticalAlignment(VerticalAlignment.Top)
+                        .Padding(new Thickness(16, 16, 16, 16))
+                        .RowSpacing(14)
+                        .RowDefinitions(
+                            new RowDefinition { Height = GridLength.Auto }, // Missing Tools Card
+                            new RowDefinition { Height = GridLength.Auto }, // Error Card
+                            new RowDefinition { Height = GridLength.Auto }, // Link Field
+                            new RowDefinition { Height = GridLength.Auto }, // Save Path Field
+                            new RowDefinition { Height = GridLength.Auto }, // Format Toggle (MP3/MP4)
+                            new RowDefinition { Height = GridLength.Auto }, // Progress Card
+                            new RowDefinition { Height = GridLength.Auto }  // Download Action Button
+                        )
+                        .Children(
+                            BuildMissingToolsCard(vm).Grid(row: 0),
+                            BuildErrorCard(vm).Grid(row: 1),
+                            BuildLinkField(vm).Grid(row: 2),
+                            BuildSavePathField(vm).Grid(row: 3),
+                            BuildSimpleFormatToggle(vm).Grid(row: 4),
+                            BuildProgressCard(vm).Grid(row: 5),
+                            BuildDownloadButton(vm).Grid(row: 6)
+                        )
+                );
         return tab;
     }
 
@@ -79,20 +86,50 @@ public sealed partial class MainPage : Page
     {
         var tab = new TabViewItem();
         tab.Header = "Bibliotek";
+        tab.IsClosable = false;
         tab.Content =
-                new Grid()
-                    .RowDefinitions(
-                        new RowDefinition { Height = GridLength.Auto }, // Controls
-                        new RowDefinition { Height = GridLength.Auto }, // Player (when playing)
-                        new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } // Items list
-                    )
-                    .RowSpacing(12)
-                    .Children(
-                        BuildLibraryControls(vm).Grid(row: 0),
-                        BuildPlayerCard(vm).Grid(row: 1),
-                        BuildItemsList(vm).Grid(row: 2)
-                    );
+            new Grid()
+                .Padding(new Thickness(8, 12, 8, 8))
+                .RowDefinitions(
+                    new RowDefinition { Height = GridLength.Auto }, // Controls
+                    new RowDefinition { Height = GridLength.Auto }, // Player (when playing)
+                    new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } // Items list
+                )
+                .RowSpacing(12)
+                .Children(
+                    BuildLibraryControls(vm).Grid(row: 0),
+                    BuildPlayerCard(vm).Grid(row: 1),
+                    BuildItemsList(vm).Grid(row: 2)
+                );
         return tab;
+    }
+
+    private static Border BuildErrorCard(MainViewModel vm)
+    {
+        return new Border()
+            .CornerRadius(new CornerRadius(10))
+            .Padding(new Thickness(14, 10, 14, 10))
+            .Background(new SolidColorBrush(ColorHelper.FromArgb(25, 239, 68, 68)))
+            .BorderBrush(new SolidColorBrush(ColorHelper.FromArgb(120, 239, 68, 68)))
+            .BorderThickness(new Thickness(1))
+            .Visibility(x => x.Binding(() => vm.Error).Convert(err => string.IsNullOrEmpty(err) ? Visibility.Collapsed : Visibility.Visible))
+            .Child(
+                new StackPanel()
+                    .Orientation(Orientation.Horizontal)
+                    .Spacing(10)
+                    .Children(
+                        new FontIcon()
+                            .Glyph("\uE783")
+                            .FontSize(16)
+                            .Foreground(new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68)))
+                            .VerticalAlignment(VerticalAlignment.Center),
+                        new TextBlock()
+                            .Text(x => x.Binding(() => vm.Error))
+                            .FontSize(12)
+                            .TextWrapping(TextWrapping.Wrap)
+                            .VerticalAlignment(VerticalAlignment.Center)
+                    )
+            );
     }
 
     private static StackPanel BuildLibraryControls(LibraryViewModel vm)
@@ -134,25 +171,41 @@ public sealed partial class MainPage : Page
                             )
                     ),
 
-                // URL row
-                new TextBox()
-                    .PlaceholderText("YouTube-länk (video, album eller spellista)")
-                    .Text(x => x.Binding(() => vm.Url))
-                    .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
-                    .FontSize(13)
-                    .Padding(new Thickness(12, 8, 12, 8))
-                    .CornerRadius(new CornerRadius(6)),
-
-                // Format toggle row
+                // URL row with Paste button
                 new Grid()
                     .ColumnDefinitions(
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
-                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+                        new ColumnDefinition { Width = GridLength.Auto }
                     )
+                    .ColumnSpacing(8)
                     .Children(
-                        BuildFormatToggle(vm, isAudio: true).Grid(column: 0),
-                        BuildFormatToggle(vm, isAudio: false).Grid(column: 1)
+                        new TextBox()
+                            .Grid(column: 0)
+                            .PlaceholderText("YouTube-länk (video, album eller spellista)")
+                            .Text(x => x.Binding(() => vm.Url).TwoWay().UpdateSourceTrigger(UpdateSourceTrigger.PropertyChanged))
+                            .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                            .FontSize(13)
+                            .Padding(new Thickness(12, 8, 12, 8))
+                            .CornerRadius(new CornerRadius(6)),
+                        new Button()
+                            .Grid(column: 1)
+                            .Command(x => x.Binding(() => vm.PasteCommand))
+                            .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                            .Padding(new Thickness(12, 8, 12, 8))
+                            .CornerRadius(new CornerRadius(6))
+                            .Content(
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(6)
+                                    .Children(
+                                        new FontIcon().Glyph("\uE77F").FontSize(14),
+                                        new TextBlock().Text("Klistra in").FontSize(13).FontWeight(FontWeights.Medium)
+                                    )
+                            )
                     ),
+
+                // Format toggle
+                BuildLibraryFormatToggle(vm),
 
                 // Download button
                 new Button()
@@ -241,34 +294,60 @@ public sealed partial class MainPage : Page
                                     .Padding(new Thickness(12, 4, 12, 4))
                                     .CornerRadius(new CornerRadius(6))
                                     .Command(x => x.Binding(() => vm.StopDownloadCommand))
-                                    .IsEnabled(x => x.Binding(() => vm.IsDownloading).Convert(d => d))
-                                    .Content(new TextBlock().Text("Stoppa").FontSize(12))
+                                    .Content(
+                                        new StackPanel()
+                                            .Orientation(Orientation.Horizontal)
+                                            .Spacing(4)
+                                            .Children(
+                                                new FontIcon().Glyph("\uE711").FontSize(11),
+                                                new TextBlock().Text("Avbryt").FontSize(12)
+                                            )
+                                    )
                             )
                     ),
 
-                // Error text
-                new TextBlock()
-                    .Text(x => x.Binding(() => vm.Error))
-                    .FontSize(12)
-                    .Foreground(new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68)))
+                // Error text card
+                new Border()
+                    .CornerRadius(new CornerRadius(8))
+                    .Padding(new Thickness(12, 8, 12, 8))
+                    .Background(new SolidColorBrush(ColorHelper.FromArgb(25, 239, 68, 68)))
+                    .BorderBrush(new SolidColorBrush(ColorHelper.FromArgb(120, 239, 68, 68)))
+                    .BorderThickness(new Thickness(1))
                     .Visibility(x => x.Binding(() => vm.Error).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
+                    .Child(
+                        new StackPanel()
+                            .Orientation(Orientation.Horizontal)
+                            .Spacing(8)
+                            .Children(
+                                new FontIcon()
+                                    .Glyph("\uE783")
+                                    .FontSize(14)
+                                    .Foreground(new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68)))
+                                    .VerticalAlignment(VerticalAlignment.Center),
+                                new TextBlock()
+                                    .Text(x => x.Binding(() => vm.Error))
+                                    .FontSize(12)
+                                    .TextWrapping(TextWrapping.Wrap)
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                            )
+                    )
             );
     }
 
-    private static StackPanel BuildFormatToggle(LibraryViewModel vm, bool isAudio)
+    private static StackPanel BuildLibraryFormatToggle(LibraryViewModel vm)
     {
         return new StackPanel()
             .Spacing(4)
             .Children(
                 new TextBlock()
-                    .Text(isAudio ? "Ljud (MP3)" : "Video (MP4)")
+                    .Text("Format för nedladdning")
                     .FontSize(12)
                     .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
                 new ToggleSwitch()
-                    .IsOn(x => x.Binding(() => vm.IsAudioSelected).Convert(selected => isAudio ? selected : !selected))
+                    .IsOn(x => x.Binding(() => vm.IsAudioSelected).TwoWay())
                     .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
-                    .OffContent("Av")
-                    .OnContent("Vald")
+                    .OffContent("MP4 (video)")
+                    .OnContent("MP3 (ljud)")
             );
     }
 
@@ -282,29 +361,66 @@ public sealed partial class MainPage : Page
             .BorderThickness(new Thickness(1))
             .Visibility(x => x.Binding(() => vm.IsPlayerVisible).Convert(v => v ? Visibility.Visible : Visibility.Collapsed))
             .Child(
-#if WINDOWS
-                new MediaPlayerElement()
-                    .AutoPlay(true)
-                    .AreTransportControlsEnabled(true)
-                    .Source(x => x.Binding(() => vm.PlayingItem).Convert(item =>
-                        string.IsNullOrEmpty(item?.FilePath)
-                            ? null!
-                            : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(item.FilePath))))
-#else
-                // No in-app media playback on Skia targets; show the file name instead.
                 new StackPanel()
-                    .Spacing(6)
+                    .Spacing(8)
                     .Children(
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.PlayingItem?.Title))
-                            .FontSize(13)
-                            .FontWeight(FontWeights.SemiBold),
-                        new TextBlock()
-                            .Text("Spelning i appen stöds endast på Windows. Filen sparas i biblioteket.")
-                            .FontSize(12)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                    )
+                        // Header with Title and Close button
+                        new Grid()
+                            .ColumnDefinitions(
+                                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                                new ColumnDefinition { Width = GridLength.Auto }
+                            )
+                            .Children(
+                                new StackPanel()
+                                    .Grid(column: 0)
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(8)
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                                    .Children(
+                                        new FontIcon()
+                                            .Glyph("\uE768")
+                                            .FontSize(14)
+                                            .Foreground(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
+                                            .VerticalAlignment(VerticalAlignment.Center),
+                                        new TextBlock()
+                                            .Text(x => x.Binding(() => vm.PlayingItem).Convert(item => item?.Title ?? "Spelar"))
+                                            .FontSize(13)
+                                            .FontWeight(FontWeights.SemiBold)
+                                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                                            .VerticalAlignment(VerticalAlignment.Center)
+                                    ),
+                                new Button()
+                                    .Grid(column: 1)
+                                    .Padding(new Thickness(8, 4, 8, 4))
+                                    .CornerRadius(new CornerRadius(6))
+                                    .Command(x => x.Binding(() => vm.ClosePlayerCommand))
+                                    .Content(
+                                        new FontIcon().Glyph("\uE711").FontSize(12)
+                                    )
+                            ),
+#if WINDOWS
+                        new MediaPlayerElement()
+                            .AutoPlay(true)
+                            .AreTransportControlsEnabled(true)
+                            .Source(x => x.Binding(() => vm.PlayingItem).Convert(item =>
+                                string.IsNullOrEmpty(item?.FilePath)
+                                    ? null!
+                                    : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(item.FilePath))))
+#else
+                        new StackPanel()
+                            .Spacing(4)
+                            .Children(
+                                new TextBlock()
+                                    .Text(x => x.Binding(() => vm.PlayingItem).Convert(item => item?.Title))
+                                    .FontSize(13)
+                                    .FontWeight(FontWeights.SemiBold),
+                                new TextBlock()
+                                    .Text("Spelning i appen stöds endast på Windows. Filen sparas i biblioteket.")
+                                    .FontSize(12)
+                                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                            )
 #endif
+                    )
             );
     }
 
@@ -313,9 +429,13 @@ public sealed partial class MainPage : Page
         var libraryList = new ListView()
             .Grid(row: 2)
             .ItemsSource(x => x.Binding(() => vm.Items))
-            .SelectedItem(x => x.Binding(() => vm.SelectedItem))
+            .SelectedItem(x => x.Binding(() => vm.SelectedItem).TwoWay())
             .Visibility(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? Visibility.Collapsed : Visibility.Visible));
         libraryList.ItemTemplate = Application.Current.Resources["LibraryItemTemplate"] as DataTemplate;
+        libraryList.SelectionChanged += (_, _) =>
+        {
+            vm.SelectedItem = libraryList.SelectedItem as LibraryItem;
+        };
 
         var searchList = new ListView()
             .Grid(row: 2)
@@ -331,26 +451,77 @@ public sealed partial class MainPage : Page
             }
         };
 
+        // Empty state when library has no items and not searching
+        var emptyState = new StackPanel()
+            .Grid(row: 2)
+            .VerticalAlignment(VerticalAlignment.Center)
+            .HorizontalAlignment(HorizontalAlignment.Center)
+            .Spacing(8)
+            .Visibility(x => x.Binding(() => vm.ShowEmptyState).Convert(show => show ? Visibility.Visible : Visibility.Collapsed))
+            .Children(
+                new FontIcon()
+                    .Glyph("\uE8D6")
+                    .FontSize(36)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush"))
+                    .HorizontalAlignment(HorizontalAlignment.Center),
+                new TextBlock()
+                    .Text("Biblioteket är tomt")
+                    .FontSize(15)
+                    .FontWeight(FontWeights.SemiBold)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                    .HorizontalAlignment(HorizontalAlignment.Center),
+                new TextBlock()
+                    .Text("Klistra in en YouTube-länk ovan eller sök efter video/musik för att komma igång.")
+                    .FontSize(12)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush"))
+                    .TextWrapping(TextWrapping.Wrap)
+                    .HorizontalAlignment(HorizontalAlignment.Center)
+            );
+
         return new Grid()
             .RowDefinitions(
                 new RowDefinition { Height = GridLength.Auto }, // Search box
-                new RowDefinition { Height = GridLength.Auto }, // List header + resync
-                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }, // Items / search results
+                new RowDefinition { Height = GridLength.Auto }, // List header + resync / clear
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }, // Items / search results / empty state
                 new RowDefinition { Height = GridLength.Auto } // Actions for selected item
             )
             .RowSpacing(8)
             .Children(
                 // Search box (debounced YouTube search)
-                new TextBox()
+                new Grid()
                     .Grid(row: 0)
-                    .PlaceholderText("Sök på YouTube...")
-                    .Text(x => x.Binding(() => vm.SearchQuery))
-                    .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
-                    .FontSize(13)
-                    .Padding(new Thickness(12, 8, 12, 8))
-                    .CornerRadius(new CornerRadius(6)),
+                    .ColumnDefinitions(
+                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                        new ColumnDefinition { Width = GridLength.Auto }
+                    )
+                    .ColumnSpacing(8)
+                    .Children(
+                        new TextBox()
+                            .Grid(column: 0)
+                            .PlaceholderText("Sök på YouTube...")
+                            .Text(x => x.Binding(() => vm.SearchQuery).TwoWay().UpdateSourceTrigger(UpdateSourceTrigger.PropertyChanged))
+                            .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                            .FontSize(13)
+                            .Padding(new Thickness(12, 8, 12, 8))
+                            .CornerRadius(new CornerRadius(6)),
+                        new Button()
+                            .Grid(column: 1)
+                            .Padding(new Thickness(10, 8, 10, 8))
+                            .CornerRadius(new CornerRadius(6))
+                            .Command(x => x.Binding(() => vm.ClearSearchCommand))
+                            .Visibility(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? Visibility.Visible : Visibility.Collapsed))
+                            .Content(
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(6)
+                                    .Children(
+                                        new FontIcon().Glyph("\uE711").FontSize(12),
+                                        new TextBlock().Text("Rensa").FontSize(12)
+                                    )
+                            )
+                    ),
 
-                // List header + resync
+                // List header + resync / search indicator
                 new Grid()
                     .Grid(row: 1)
                     .ColumnDefinitions(
@@ -358,18 +529,31 @@ public sealed partial class MainPage : Page
                         new ColumnDefinition { Width = GridLength.Auto }
                     )
                     .Children(
-                        new TextBlock()
+                        new StackPanel()
                             .Grid(column: 0)
-                            .Text("Biblioteket")
-                            .FontSize(15)
-                            .FontWeight(FontWeights.SemiBold)
-                            .VerticalAlignment(VerticalAlignment.Center),
+                            .Orientation(Orientation.Horizontal)
+                            .Spacing(8)
+                            .VerticalAlignment(VerticalAlignment.Center)
+                            .Children(
+                                new TextBlock()
+                                    .Text(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? "Sökresultat" : "Biblioteket"))
+                                    .FontSize(15)
+                                    .FontWeight(FontWeights.SemiBold)
+                                    .VerticalAlignment(VerticalAlignment.Center),
+                                new ProgressRing()
+                                    .Width(14)
+                                    .Height(14)
+                                    .IsActive(x => x.Binding(() => vm.IsSearching))
+                                    .Visibility(x => x.Binding(() => vm.IsSearching).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                            ),
                         new Button()
                             .Grid(column: 1)
                             .Padding(new Thickness(12, 6, 12, 6))
                             .CornerRadius(new CornerRadius(6))
                             .Command(x => x.Binding(() => vm.ResyncCommand))
                             .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
+                            .Visibility(x => x.Binding(() => vm.HasSearchResults).Convert(has => has ? Visibility.Collapsed : Visibility.Visible))
                             .Content(
                                 new StackPanel()
                                     .Orientation(Orientation.Horizontal)
@@ -381,14 +565,16 @@ public sealed partial class MainPage : Page
                             )
                     ),
 
-                // Library items + search results (same cell; visibility toggled by HasSearchResults)
+                // Library items + search results + empty state
                 libraryList,
                 searchList,
+                emptyState,
 
                 // Actions for the selected library item
                 new Grid()
                     .Grid(row: 3)
                     .ColumnDefinitions(
+                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
@@ -398,7 +584,7 @@ public sealed partial class MainPage : Page
                     .Children(
                         new Button()
                             .Grid(column: 0)
-                            .Padding(new Thickness(8, 10, 8, 10))
+                            .Padding(new Thickness(6, 8, 6, 8))
                             .CornerRadius(new CornerRadius(6))
                             .Command(x => x.Binding(() => vm.PlaySelectedCommand))
                             .Content(
@@ -413,7 +599,22 @@ public sealed partial class MainPage : Page
                             ),
                         new Button()
                             .Grid(column: 1)
-                            .Padding(new Thickness(8, 10, 8, 10))
+                            .Padding(new Thickness(6, 8, 6, 8))
+                            .CornerRadius(new CornerRadius(6))
+                            .Command(x => x.Binding(() => vm.OpenFolderSelectedCommand))
+                            .Content(
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(6)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .Children(
+                                        new FontIcon().Glyph("\uED25").FontSize(13),
+                                        new TextBlock().Text("Visa i mapp").FontSize(12).FontWeight(FontWeights.Medium)
+                                    )
+                            ),
+                        new Button()
+                            .Grid(column: 2)
+                            .Padding(new Thickness(6, 8, 6, 8))
                             .CornerRadius(new CornerRadius(6))
                             .Command(x => x.Binding(() => vm.RemoveSelectedCommand))
                             .Content(
@@ -427,8 +628,8 @@ public sealed partial class MainPage : Page
                                     )
                             ),
                         new Button()
-                            .Grid(column: 2)
-                            .Padding(new Thickness(8, 10, 8, 10))
+                            .Grid(column: 3)
+                            .Padding(new Thickness(6, 8, 6, 8))
                             .CornerRadius(new CornerRadius(6))
                             .Command(x => x.Binding(() => vm.DeleteWithFileSelectedCommand))
                             .Content(
@@ -484,7 +685,7 @@ public sealed partial class MainPage : Page
                                     .FontSize(20)
                                     .FontWeight(FontWeights.Bold),
                                 new TextBlock()
-                                    .Text("Snabb MP3-konverterare")
+                                    .Text("YouTube Ljud & Video")
                                     .FontSize(12)
                                     .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
                             )
@@ -639,7 +840,7 @@ public sealed partial class MainPage : Page
                         new TextBox()
                             .Grid(column: 0)
                             .PlaceholderText("https://www.youtube.com/watch?v=...")
-                            .Text(x => x.Binding(() => vm.Link).TwoWay())
+                            .Text(x => x.Binding(() => vm.Link).TwoWay().UpdateSourceTrigger(UpdateSourceTrigger.PropertyChanged))
                             .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
                             .FontSize(14)
                             .Padding(new Thickness(12, 10, 12, 10))
@@ -718,7 +919,7 @@ public sealed partial class MainPage : Page
                     .FontSize(12)
                     .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
                 new ToggleSwitch()
-                    .IsOn(x => x.Binding(() => vm.IsAudioSelected))
+                    .IsOn(x => x.Binding(() => vm.IsAudioSelected).TwoWay())
                     .IsEnabled(x => x.Binding(() => vm.IsBusy).Convert(b => !b))
                     .OffContent("MP4 (video)")
                     .OnContent("MP3 (ljud)")
@@ -762,82 +963,137 @@ public sealed partial class MainPage : Page
                             .Maximum(100)
                             .Value(x => x.Binding(() => vm.ProgressPercent))
                             .IsIndeterminate(x => x.Binding(() => vm.IsProgressIndeterminate)),
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.ProgressMessage))
-                            .FontSize(12)
-                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            .Visibility(x => x.Binding(() => vm.ProgressMessage).Convert(m => string.IsNullOrEmpty(m) ? Visibility.Collapsed : Visibility.Visible))
+                        new Grid()
+                            .ColumnDefinitions(
+                                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                                new ColumnDefinition { Width = GridLength.Auto }
+                            )
+                            .Children(
+                                new TextBlock()
+                                    .Grid(column: 0)
+                                    .Text(x => x.Binding(() => vm.ProgressMessage))
+                                    .FontSize(12)
+                                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                                    .Visibility(x => x.Binding(() => vm.ProgressMessage).Convert(m => string.IsNullOrEmpty(m) ? Visibility.Collapsed : Visibility.Visible)),
+                                new Button()
+                                    .Grid(column: 1)
+                                    .Padding(new Thickness(10, 4, 10, 4))
+                                    .CornerRadius(new CornerRadius(6))
+                                    .Command(x => x.Binding(() => vm.StopDownloadCommand))
+                                    .Visibility(x => x.Binding(() => vm.IsBusy).Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
+                                    .Content(
+                                        new StackPanel()
+                                            .Orientation(Orientation.Horizontal)
+                                            .Spacing(4)
+                                            .Children(
+                                                new FontIcon().Glyph("\uE711").FontSize(11),
+                                                new TextBlock().Text("Avbryt").FontSize(11)
+                                            )
+                                    )
+                            )
                     )
             );
     }
 
-    private static Button BuildDownloadButton(MainViewModel vm)
+    private static Grid BuildDownloadButton(MainViewModel vm)
     {
-        return new Button()
-            .Height(48)
-            .HorizontalAlignment(HorizontalAlignment.Stretch)
-            .CornerRadius(new CornerRadius(8))
-            .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
-            .Command(x => x.Binding(() => vm.DownloadCommand))
-            .IsEnabled(x => x.Binding(() => vm.CanDownload))
-            .Content(
+        return new Grid()
+            .Children(
+                // Download button (visible when not finished)
+                new Button()
+                    .Height(48)
+                    .HorizontalAlignment(HorizontalAlignment.Stretch)
+                    .CornerRadius(new CornerRadius(8))
+                    .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+                    .Command(x => x.Binding(() => vm.DownloadCommand))
+                    .IsEnabled(x => x.Binding(() => vm.CanDownload))
+                    .Visibility(x => x.Binding(() => vm.IsFinishedNotBusy).Convert(f => f ? Visibility.Collapsed : Visibility.Visible))
+                    .Content(
+                        new Grid()
+                            .Children(
+                                // Busy State
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(10)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                                    .Visibility(x => x.Binding(() => vm.IsBusy).Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
+                                    .Children(
+                                        new ProgressRing()
+                                            .Width(18)
+                                            .Height(18)
+                                            .IsActive(true)
+                                            .Foreground(new SolidColorBrush(Colors.White)),
+                                        new TextBlock()
+                                            .Text("Laddar ner & konverterar...")
+                                            .FontSize(15)
+                                            .FontWeight(FontWeights.SemiBold)
+                                            .VerticalAlignment(VerticalAlignment.Center)
+                                    ),
+
+                                // Normal Ready State
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(10)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .VerticalAlignment(VerticalAlignment.Center)
+                                    .Visibility(x => x.Binding(() => vm.IsBusy).Convert(b => b ? Visibility.Collapsed : Visibility.Visible))
+                                    .Children(
+                                        new FontIcon()
+                                            .Glyph("\uE896")
+                                            .FontSize(16),
+                                        new TextBlock()
+                                            .Text(x => x.Binding(() => vm.DownloadButtonText))
+                                            .FontSize(15)
+                                            .FontWeight(FontWeights.SemiBold)
+                                            .VerticalAlignment(VerticalAlignment.Center)
+                                    )
+                            )
+                    ),
+
+                // Finished State: two buttons (Open folder + Download another)
                 new Grid()
+                    .ColumnDefinitions(
+                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+                    )
+                    .ColumnSpacing(10)
+                    .Visibility(x => x.Binding(() => vm.IsFinishedNotBusy).Convert(f => f ? Visibility.Visible : Visibility.Collapsed))
                     .Children(
-                        // Busy State
-                        new StackPanel()
-                            .Orientation(Orientation.Horizontal)
-                            .Spacing(10)
-                            .HorizontalAlignment(HorizontalAlignment.Center)
-                            .VerticalAlignment(VerticalAlignment.Center)
-                            .Visibility(x => x.Binding(() => vm.IsBusy).Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
-                            .Children(
-                                new ProgressRing()
-                                    .Width(18)
-                                    .Height(18)
-                                    .IsActive(true)
-                                    .Foreground(new SolidColorBrush(Colors.White)),
-                                new TextBlock()
-                                    .Text("Laddar ner & konverterar...")
-                                    .FontSize(15)
-                                    .FontWeight(FontWeights.SemiBold)
-                                    .VerticalAlignment(VerticalAlignment.Center)
+                        new Button()
+                            .Grid(column: 0)
+                            .Height(48)
+                            .HorizontalAlignment(HorizontalAlignment.Stretch)
+                            .CornerRadius(new CornerRadius(8))
+                            .Command(x => x.Binding(() => vm.OpenFolderCommand))
+                            .Content(
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(8)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .Children(
+                                        new FontIcon().Glyph("\uED25").FontSize(16),
+                                        new TextBlock().Text("Öppna mapp").FontSize(14).FontWeight(FontWeights.SemiBold)
+                                    )
                             ),
-
-                        // Finished State
-                        new StackPanel()
-                            .Orientation(Orientation.Horizontal)
-                            .Spacing(10)
-                            .HorizontalAlignment(HorizontalAlignment.Center)
-                            .VerticalAlignment(VerticalAlignment.Center)
-                            .Visibility(x => x.Binding(() => vm.IsFinishedNotBusy).Convert(f => f ? Visibility.Visible : Visibility.Collapsed))
-                            .Children(
-                                new FontIcon()
-                                    .Glyph("\uE73E")
-                                    .FontSize(16),
-                                new TextBlock()
-                                    .Text("Ladda ner en till")
-                                    .FontSize(15)
-                                    .FontWeight(FontWeights.SemiBold)
-                                    .VerticalAlignment(VerticalAlignment.Center)
-                            ),
-
-                        // Normal Ready State
-                        new StackPanel()
-                            .Orientation(Orientation.Horizontal)
-                            .Spacing(10)
-                            .HorizontalAlignment(HorizontalAlignment.Center)
-                            .VerticalAlignment(VerticalAlignment.Center)
-                            .Visibility(x => x.Binding(() => vm.IsNormalNotBusy).Convert(n => n ? Visibility.Visible : Visibility.Collapsed))
-                            .Children(
-                                new FontIcon()
-                                    .Glyph("\uE896")
-                                    .FontSize(16),
-                                new TextBlock()
-                                    .Text(x => x.Binding(() => vm.DownloadButtonText))
-                                    .FontSize(15)
-                                    .FontWeight(FontWeights.SemiBold)
-                                    .VerticalAlignment(VerticalAlignment.Center)
+                        new Button()
+                            .Grid(column: 1)
+                            .Height(48)
+                            .HorizontalAlignment(HorizontalAlignment.Stretch)
+                            .CornerRadius(new CornerRadius(8))
+                            .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+                            .Command(x => x.Binding(() => vm.ResetCommand))
+                            .Content(
+                                new StackPanel()
+                                    .Orientation(Orientation.Horizontal)
+                                    .Spacing(8)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .Children(
+                                        new FontIcon().Glyph("\uE73E").FontSize(16),
+                                        new TextBlock().Text("Ladda ner en till").FontSize(14).FontWeight(FontWeights.SemiBold)
+                                    )
                             )
                     )
             );

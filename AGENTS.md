@@ -118,11 +118,12 @@ python3 -m pip install -e .     # or: uv tool install -e .   (adds `vpp` to PATH
 
 | Task | Command (run from anywhere in the repo) |
 |:---|:---|
-| **Check prerequisites** (.NET SDK, yt-dlp, ffmpeg) | `vpp doctor` |
+| **Check prerequisites** (.NET SDK, yt-dlp, ffmpeg, Inno Setup) | `vpp doctor` |
 | **Build (auto-selects target per OS)** | `vpp build` |
 | **Full rebuild / clean first** | `vpp build --no-incremental` · `vpp build --clean` |
 | **Run the app** | `vpp run` |
 | **Publish standalone exe** (win-x64, Release) | `vpp publish` (`--self-contained` for a full bundle) |
+| **Build Windows Installer** (Inno Setup) | `vpp installer` (or `.\installer\build-installer.ps1`) |
 
 Use `-c/--configuration` (default `Debug`) or `-f/--framework` to override. The
 raw `dotnet` equivalents below remain available if you prefer not to install the CLI.
@@ -136,6 +137,7 @@ raw `dotnet` equivalents below remain available if you prefer not to install the
 | **Build Skia desktop target** (any OS) | `dotnet build -f net10.0` |
 | **Run** | `dotnet run --project VideoPiper/VideoPiper.csproj` |
 | **Publish Windows exe** | `dotnet publish -f net10.0-windows10.0.26100 -c Release -r win-x64 --self-contained true -o ./publish` |
+| **Build Installer** | `powershell -ExecutionPolicy Bypass -File ../installer/build-installer.ps1` |
 
 ### Target Frameworks & Multi-Targeting
 
