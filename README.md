@@ -42,6 +42,26 @@ cd video-piper
 dotnet publish VideoPiper/VideoPiper.csproj -c Release -r win-x64 --self-contained true -o ./publish
 ```
 
+### Install & Package (Python / Inno Setup)
+You can package and install Video Piper using the zero-dependency Python tools:
+
+```bash
+# Package portable ZIP and setup executable
+python installer/build_installer.py
+
+# Install to %LOCALAPPDATA%\Programs\Video Piper with Start menu & desktop shortcuts
+python installer/install.py
+
+# Uninstall cleanly
+python installer/install.py --uninstall
+```
+
+Alternatively, use the `vpp` CLI (`tools/vpp`):
+```bash
+vpp publish --self-contained
+vpp installer
+```
+
 ---
 
 ## 📖 Documentation & Architecture

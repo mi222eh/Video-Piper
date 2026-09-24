@@ -15,7 +15,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from vpp import __version__
+try:
+    from vpp import __version__
+except ImportError:
+    try:
+        from . import __version__
+    except ImportError:
+        __version__ = "0.1.0"
 
 # TFM per host OS, mirroring the conditional <TargetFrameworks> in VideoPiper.csproj.
 WINDOWS_TFM = "net10.0-windows10.0.26100"
@@ -147,6 +153,20 @@ def cmd_installer(args: argparse.Namespace) -> int:
 
     root = find_project_root()
     repo_root = root if (root / "installer").is_dir() else root.parent
+    py_builder = repo_root / "installer" / "build_installer.py"
+
+    if py_builder.is_file():
+        cmd = [sys.executable, str(py_builder), "-v", args.app_version]
+        if args.output:
+            cmd.extend(["-o", str(args.output)])
+        if args.publish:
+            cmd.append("--publish")
+        if getattr(args, "zip_only", False):
+            cmd.append("--zip-only")
+        if getattr(args, "setup_only", False):
+            cmd.append("--setup-only")
+        return subprocess.call(cmd)
+
     installer_dir = repo_root / "installer"
     publish_dir = root / "publish"
     exe_path = publish_dir / "VideoPiper.exe"
@@ -280,10 +300,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Produce a self-contained bundle (default: framework-dependent).")
     p_pub.set_defaults(func=cmd_publish)
 
-    p_inst = sub.add_parser("installer", help="Build the Windows installer via Inno Setup.")
+    p_inst = sub.add_parser("installer", help="Build Windows setup installer or portable distribution package.")
     p_inst.add_argument("-v", "--app-version", default="1.0.0", help="Version string for installer (default: 1.0.0).")
-    p_inst.add_argument("-o", "--output", help="Output directory for the setup .exe (default: installer/output).")
+    p_inst.add_argument("-o", "--output", help="Output directory for packages (default: installer/output).")
     p_inst.add_argument("--publish", action="store_true", help="Force a fresh `vpp publish` before packaging.")
+    p_inst.add_argument("--zip-only", action="store_true", help="Build portable ZIP archive only.")
+    p_inst.add_argument("--setup-only", action="store_true", help="Build Inno Setup executable only.")
     p_inst.set_defaults(func=cmd_installer)
 
     p_doc = sub.add_parser("doctor", help="Check prerequisites (.NET SDK, yt-dlp, ffmpeg, Inno Setup).")
