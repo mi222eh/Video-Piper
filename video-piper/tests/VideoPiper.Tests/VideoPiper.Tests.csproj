@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\VideoPiper\Models\*.cs" Link="Models\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\YtDlpJson.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\SearchService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\LibraryStore.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\PreferencesService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\SystemService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\ToolInstallerService.cs" Link="Services\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+</Project>

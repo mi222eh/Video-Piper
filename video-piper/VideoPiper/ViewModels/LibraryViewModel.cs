@@ -12,6 +12,14 @@ namespace VideoPiper.ViewModels;
 /// View model for the library tab: browsing the root, downloading media (audio or video)
 /// into the library, and managing items (play local file, remove, delete).
 /// </summary>
+public enum LibrarySidebarSection
+{
+    AllMedia,
+    AudioOnly,
+    VideoOnly,
+    YouTubeSearch,
+}
+
 public sealed class LibraryViewModel : INotifyPropertyChanged
 {
     private LibraryStore _store = new(string.Empty);
@@ -20,6 +28,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private string _searchQuery = string.Empty;
     private string _localSearchQuery = string.Empty;
     private MediaKind _kind = MediaKind.Audio;
+    private LibrarySidebarSection _activeSection = LibrarySidebarSection.AllMedia;
     private bool _isDownloading;
     private bool _isFetching;
     private bool _isSearching;
@@ -57,6 +66,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private readonly RelayCommand _openRootFolderCommand;
     private readonly RelayCommand _clearSearchCommand;
     private readonly RelayCommand _clearErrorCommand;
+    private readonly ParameterizedRelayCommand _selectSectionCommand;
+    private readonly RelayCommand _executeSearchCommand;
 
     public ICommand BrowseCommand => _browseCommand;
     public ICommand DownloadCommand => _downloadCommand;
@@ -76,6 +87,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     public ICommand OpenRootFolderCommand => _openRootFolderCommand;
     public ICommand ClearSearchCommand => _clearSearchCommand;
     public ICommand ClearErrorCommand => _clearErrorCommand;
+    public ICommand SelectSectionCommand => _selectSectionCommand;
+    public ICommand ExecuteSearchCommand => _executeSearchCommand;
 
     public LibraryViewModel()
     {
@@ -99,7 +112,65 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         _closePlayerCommand = new RelayCommand(ClosePlayer);
         _clearSearchCommand = new RelayCommand(ClearSearch);
         _clearErrorCommand = new RelayCommand(() => { Error = null; return Task.CompletedTask; });
+
+        _selectSectionCommand = new ParameterizedRelayCommand(p =>
+        {
+            if (p is string s)
+            {
+                ActiveSection = s.ToLowerInvariant() switch
+                {
+                    "audio" => LibrarySidebarSection.AudioOnly,
+                    "video" => LibrarySidebarSection.VideoOnly,
+                    "search" => LibrarySidebarSection.YouTubeSearch,
+                    _ => LibrarySidebarSection.AllMedia,
+                };
+            }
+            else if (p is LibrarySidebarSection sec)
+            {
+                ActiveSection = sec;
+            }
+            return Task.CompletedTask;
+        });
+
+        _executeSearchCommand = new RelayCommand(RunSearchNowAsync, () => !IsSearching);
     }
+
+    public LibrarySidebarSection ActiveSection
+    {
+        get => _activeSection;
+        set
+        {
+            if (Set(ref _activeSection, value))
+            {
+                FilterIndex = value switch
+                {
+                    LibrarySidebarSection.AudioOnly => 1,
+                    LibrarySidebarSection.VideoOnly => 2,
+                    _ => 0,
+                };
+                OnPropertyChanged(nameof(IsAllActive));
+                OnPropertyChanged(nameof(IsAudioActive));
+                OnPropertyChanged(nameof(IsVideoActive));
+                OnPropertyChanged(nameof(IsSearchActive));
+                OnPropertyChanged(nameof(IsCollectionActive));
+                OnPropertyChanged(nameof(SectionTitle));
+            }
+        }
+    }
+
+    public bool IsAllActive => _activeSection == LibrarySidebarSection.AllMedia;
+    public bool IsAudioActive => _activeSection == LibrarySidebarSection.AudioOnly;
+    public bool IsVideoActive => _activeSection == LibrarySidebarSection.VideoOnly;
+    public bool IsSearchActive => _activeSection == LibrarySidebarSection.YouTubeSearch;
+    public bool IsCollectionActive => _activeSection != LibrarySidebarSection.YouTubeSearch;
+
+    public string SectionTitle => _activeSection switch
+    {
+        LibrarySidebarSection.AudioOnly => $"Ljudfiler ({AudioCount})",
+        LibrarySidebarSection.VideoOnly => $"Videofiler ({VideoCount})",
+        LibrarySidebarSection.YouTubeSearch => "YouTube-sökning",
+        _ => $"Alla filer ({TotalCount})",
+    };
 
     /// <summary>Unified search/URL box text. If a URL is entered, it enables download mode; otherwise debounces YouTube search.</summary>
     public string SearchQuery
@@ -220,6 +291,69 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task RunSearchNowAsync()
+    {
+        var trimmed = SearchQuery.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return;
+        }
+
+        if (IsYouTubeUrl(trimmed))
+        {
+            Url = trimmed;
+            IsUrlInput = true;
+            await DownloadAsync();
+            return;
+        }
+
+        _searchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+
+        OnUi(() =>
+        {
+            Error = null;
+            IsSearching = true;
+            HasSearchResults = true;
+        });
+
+        try
+        {
+            var results = await SearchService.SearchAsync(trimmed, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            OnUi(() =>
+            {
+                SearchResults.Clear();
+                foreach (var result in results)
+                {
+                    SearchResults.Add(result);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                OnUi(() => Error = $"Sökningen misslyckades: {ex.Message}");
+            }
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                OnUi(() => IsSearching = false);
+            }
+        }
+    }
+
     private async Task RunSearchAsync(string query, CancellationToken cancellationToken)
     {
         var trimmed = query.Trim();
@@ -237,8 +371,12 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             await Task.Delay(400, cancellationToken); // debounce window
 
-            IsSearching = true;
-            HasSearchResults = true;
+            OnUi(() =>
+            {
+                IsSearching = true;
+                HasSearchResults = true;
+            });
+
             var results = await SearchService.SearchAsync(trimmed, cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
@@ -270,7 +408,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                IsSearching = false;
+                OnUi(() => IsSearching = false);
             }
         }
     }
@@ -289,8 +427,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             DurationSeconds: result.DurationSeconds,
             Url: $"https://www.youtube.com/watch?v={result.Id}");
 
-        // Clear search so user sees their new item appearing in the library
-        ClearSearch();
+        // Switch to Collection view so user sees their new download appearing with progress
+        ActiveSection = LibrarySidebarSection.AllMedia;
 
         await DownloadManyCoreAsync(new[] { entry }, playlistTitle: null);
     }

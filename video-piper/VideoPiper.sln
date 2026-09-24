@@ -1,11 +1,10 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32210.308
 MinimumVisualStudioVersion = 15.0.26124.0
-
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VideoPiper", "VideoPiper\VideoPiper.csproj", "{C0E9933C-8717-4027-B271-87C8D949FBF6}"
 EndProject
-
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{BADA71DC-7FFD-4EDC-9F28-FB74AEADC713}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -15,6 +14,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Directory.Packages.props = Directory.Packages.props
 		global.json = global.json
 	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VideoPiper.Tests", "tests\VideoPiper.Tests\VideoPiper.Tests.csproj", "{09BA4388-1C0D-4248-8DD0-74C2BF649F95}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -76,11 +79,40 @@ Global
 		{C0E9933C-8717-4027-B271-87C8D949FBF6}.Release|x86.ActiveCfg = Release|Any CPU
 		{C0E9933C-8717-4027-B271-87C8D949FBF6}.Release|x86.Build.0 = Release|Any CPU
 		{C0E9933C-8717-4027-B271-87C8D949FBF6}.Release|x86.Deploy.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|ARM.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|iPhone.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|iPhone.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|iPhoneSimulator.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|iPhoneSimulator.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|x64.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Debug|x86.Build.0 = Debug|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|Any CPU.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|ARM.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|ARM.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|ARM64.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|iPhone.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|iPhone.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|iPhoneSimulator.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|iPhoneSimulator.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|x64.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|x64.Build.0 = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|x86.ActiveCfg = Release|Any CPU
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{09BA4388-1C0D-4248-8DD0-74C2BF649F95} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B28ABDF1-FEB0-4C30-8A08-81BCE344D414}

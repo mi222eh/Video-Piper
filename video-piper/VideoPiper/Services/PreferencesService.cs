@@ -27,7 +27,27 @@ public static class PreferencesService
         WriteIndented = true,
     };
 
-    private static string FilePath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "preferences.json");
+    private static string LocalFolderPath
+    {
+        get
+        {
+#if WINDOWS || HAS_UNO
+            try
+            {
+                return Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+            }
+            catch
+            {
+                // Fallback to LocalApplicationData
+            }
+#endif
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoPiper");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
+
+    private static string FilePath => Path.Combine(LocalFolderPath, "preferences.json");
 
     public static string? GetSavePath()
     {
@@ -122,7 +142,7 @@ public static class PreferencesService
             return null;
         }
     }
-    private static string ThemeFile => Path.Combine(ApplicationData.Current.LocalFolder.Path, "theme.json");
+    private static string ThemeFile => Path.Combine(LocalFolderPath, "theme.json");
 
     public static string? GetTheme()
     {

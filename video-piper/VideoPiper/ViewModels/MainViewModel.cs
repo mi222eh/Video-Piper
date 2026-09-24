@@ -278,6 +278,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsDark = savedTheme != "light";
         App.SetTheme(IsDark);
         await RefreshToolsAsync();
+
+        // Automatically ensure tools (download if missing, auto-update yt-dlp) in the background
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var status = await SystemService.EnsureToolsAsync(msg => OnUi(() => InstallStatus = msg));
+                OnUi(() =>
+                {
+                    YtDlpVersion = status.YtDlp.Available ? $"yt-dlp v{StripVersionPrefix(status.YtDlp.Version)}" : null;
+                    ToolsReady = status.AllAvailable;
+                    YtDlpMissing = !status.YtDlp.Available;
+                    FfmpegMissing = !status.Ffmpeg.Available;
+                    InstallStatus = null;
+                });
+            }
+            catch (Exception ex)
+            {
+                OnUi(() => InstallStatus = $"Verktygsfel: {ex.Message}");
+            }
+        });
     }
 
     private async Task RefreshToolsAsync()

@@ -62,6 +62,12 @@ public static class SearchService
             return status.YtDlp.Path;
         }
 
+        status = await SystemService.EnsureToolsAsync();
+        if (status.YtDlp.Available && !string.IsNullOrEmpty(status.YtDlp.Path))
+        {
+            return status.YtDlp.Path;
+        }
+
         throw new FileNotFoundException("yt-dlp hittades inte. Installera yt-dlp och försök igen.");
     }
 

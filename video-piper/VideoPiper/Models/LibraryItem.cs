@@ -101,7 +101,7 @@ public sealed class LibraryItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsComplete));
                 OnPropertyChanged(nameof(IsFailed));
                 OnPropertyChanged(nameof(CanPlay));
-                OnPropertyChanged(nameof(ProgressVisibility));
+                OnPropertyChanged("ProgressVisibility");
                 OnPropertyChanged(nameof(IsIndeterminate));
             }
         }
@@ -171,8 +171,10 @@ public sealed class LibraryItem : INotifyPropertyChanged
     public bool IsComplete => Status == ItemStatus.Complete;
     public bool IsFailed => Status == ItemStatus.Failed;
     public bool CanPlay => Status == ItemStatus.Complete && !string.IsNullOrEmpty(FilePath) && File.Exists(FilePath);
-    public Microsoft.UI.Xaml.Visibility ProgressVisibility => Status == ItemStatus.Downloading ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
     public bool IsIndeterminate => Status == ItemStatus.Downloading && (Percent == null || Percent <= 0);
+#if WINDOWS || HAS_UNO
+    public Microsoft.UI.Xaml.Visibility ProgressVisibility => Status == ItemStatus.Downloading ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+#endif
     public string PercentFormatted => $"{(Percent ?? 0):0}%";
 
     public string KindLabel => Kind == MediaKind.Audio ? "MP3" : "MP4";
