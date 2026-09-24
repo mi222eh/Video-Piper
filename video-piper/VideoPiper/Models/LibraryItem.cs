@@ -31,8 +31,12 @@ public enum ItemStatus
 public sealed class LibraryItem : INotifyPropertyChanged
 {
     private string _title = string.Empty;
+    private string? _uploader;
+    private string? _playlist;
+    private MediaKind _kind = MediaKind.Audio;
     private ItemStatus _status = ItemStatus.Queued;
     private double? _percent;
+    private double? _durationSeconds;
     private string? _filePath;
     private string? _error;
 
@@ -46,12 +50,44 @@ public sealed class LibraryItem : INotifyPropertyChanged
     }
 
     /// <summary>Channel/uploader name — determines the top-level subfolder.</summary>
-    public string? Uploader { get; set; }
+    public string? Uploader
+    {
+        get => _uploader;
+        set
+        {
+            if (Set(ref _uploader, value))
+            {
+                OnPropertyChanged(nameof(StatusText));
+            }
+        }
+    }
 
     /// <summary>Playlist name, when the item is part of a playlist — nested subfolder.</summary>
-    public string? Playlist { get; set; }
+    public string? Playlist
+    {
+        get => _playlist;
+        set
+        {
+            if (Set(ref _playlist, value))
+            {
+                OnPropertyChanged(nameof(StatusText));
+            }
+        }
+    }
 
-    public MediaKind Kind { get; set; } = MediaKind.Audio;
+    public MediaKind Kind
+    {
+        get => _kind;
+        set
+        {
+            if (Set(ref _kind, value))
+            {
+                OnPropertyChanged(nameof(IconGlyph));
+                OnPropertyChanged(nameof(KindLabel));
+                OnPropertyChanged(nameof(StatusText));
+            }
+        }
+    }
 
     public ItemStatus Status
     {
@@ -61,6 +97,12 @@ public sealed class LibraryItem : INotifyPropertyChanged
             if (Set(ref _status, value))
             {
                 OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsDownloading));
+                OnPropertyChanged(nameof(IsComplete));
+                OnPropertyChanged(nameof(IsFailed));
+                OnPropertyChanged(nameof(CanPlay));
+                OnPropertyChanged(nameof(ProgressVisibility));
+                OnPropertyChanged(nameof(IsIndeterminate));
             }
         }
     }
@@ -74,18 +116,37 @@ public sealed class LibraryItem : INotifyPropertyChanged
             if (Set(ref _percent, value))
             {
                 OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsIndeterminate));
+                OnPropertyChanged(nameof(PercentFormatted));
             }
         }
     }
 
     /// <summary>Duration in seconds, when known from metadata.</summary>
-    public double? DurationSeconds { get; set; }
+    public double? DurationSeconds
+    {
+        get => _durationSeconds;
+        set
+        {
+            if (Set(ref _durationSeconds, value))
+            {
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(DurationFormatted));
+            }
+        }
+    }
 
     /// <summary>Absolute path to the media file once complete (or partially downloaded).</summary>
     public string? FilePath
     {
         get => _filePath;
-        set => Set(ref _filePath, value);
+        set
+        {
+            if (Set(ref _filePath, value))
+            {
+                OnPropertyChanged(nameof(CanPlay));
+            }
+        }
     }
 
     public DateTimeOffset AddedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -101,15 +162,38 @@ public sealed class LibraryItem : INotifyPropertyChanged
             if (Set(ref _error, value))
             {
                 OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsFailed));
             }
         }
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? name = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    public bool IsDownloading => Status == ItemStatus.Downloading;
+    public bool IsComplete => Status == ItemStatus.Complete;
+    public bool IsFailed => Status == ItemStatus.Failed;
+    public bool CanPlay => Status == ItemStatus.Complete && !string.IsNullOrEmpty(FilePath) && File.Exists(FilePath);
+    public Microsoft.UI.Xaml.Visibility ProgressVisibility => Status == ItemStatus.Downloading ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public bool IsIndeterminate => Status == ItemStatus.Downloading && (Percent == null || Percent <= 0);
+    public string PercentFormatted => $"{(Percent ?? 0):0}%";
+
+    public string KindLabel => Kind == MediaKind.Audio ? "MP3" : "MP4";
 
     /// <summary>Segoe MDL2 glyph for the item kind, used by list rows.</summary>
     public string IconGlyph => Kind == MediaKind.Audio ? "\uE8D6" : "\uE714";
+
+    public string DurationFormatted
+    {
+        get
+        {
+            if (DurationSeconds is > 0)
+            {
+                var d = TimeSpan.FromSeconds(DurationSeconds.Value);
+                return d.TotalHours >= 1
+                    ? $"{(int)d.TotalHours}:{d.Minutes:00}:{d.Seconds:00}"
+                    : $"{(int)d.TotalMinutes}:{d.Seconds:00}";
+            }
+            return string.Empty;
+        }
+    }
 
     /// <summary>Display text combining uploader/playlist and current status, for list rows.</summary>
     public string StatusText
@@ -135,8 +219,7 @@ public sealed class LibraryItem : INotifyPropertyChanged
                     parts.Add(string.IsNullOrEmpty(Error) ? "Misslyckades" : $"Misslyckades: {Error}");
                     break;
                 case ItemStatus.Complete when DurationSeconds is > 0:
-                    var d = TimeSpan.FromSeconds(DurationSeconds.Value);
-                    parts.Add($"{(int)d.TotalMinutes}:{d.Seconds.ToString("00")}");
+                    parts.Add(DurationFormatted);
                     break;
             }
 
@@ -145,6 +228,9 @@ public sealed class LibraryItem : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

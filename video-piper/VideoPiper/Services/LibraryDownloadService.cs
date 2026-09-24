@@ -25,16 +25,24 @@ public static class LibraryDownloadService
     {
         var ytDlpPath = await ResolveYtDlpAsync();
 
-        // First probe: is this a playlist? (flat-playlist mode is fast — no stream resolution)
+        // Fast probe: check if playlist or single video with flat-playlist
         var flatJson = await RunYtDlpAsync(ytDlpPath, $"--flat-playlist -J --no-warnings \"{url}\"", cancellationToken);
         if (YtDlpJson.TryParsePlaylist(flatJson) is { } playlist && playlist.Entries.Count > 0)
         {
             return playlist;
         }
 
-        // Single video: full metadata for accurate uploader/duration.
-        var fullJson = await RunYtDlpAsync(ytDlpPath, $"-J --no-warnings \"{url}\"", cancellationToken);
-        return (new List<MediaEntry> { YtDlpJson.ParseSingle(fullJson) }, null);
+        // Single video: parse the root element directly from the flatJson without a 2nd subprocess call
+        try
+        {
+            return (new List<MediaEntry> { YtDlpJson.ParseSingle(flatJson) }, null);
+        }
+        catch
+        {
+            // Fallback: full metadata probe only if flat parsing failed
+            var fullJson = await RunYtDlpAsync(ytDlpPath, $"-J --no-warnings \"{url}\"", cancellationToken);
+            return (new List<MediaEntry> { YtDlpJson.ParseSingle(fullJson) }, null);
+        }
     }
 
     /// <summary>
@@ -197,9 +205,15 @@ public static class LibraryDownloadService
 
         try
         {
-            return Directory.EnumerateFiles(folder)
-                .FirstOrDefault(f => f.Contains(marker, StringComparison.OrdinalIgnoreCase) &&
-                                     f.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+            var files = Directory.EnumerateFiles(folder).ToList();
+            var match = files.FirstOrDefault(f => f.Contains(marker, StringComparison.OrdinalIgnoreCase) &&
+                                                  f.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+
+            return files.FirstOrDefault(f => f.Contains(marker, StringComparison.OrdinalIgnoreCase));
         }
         catch
         {

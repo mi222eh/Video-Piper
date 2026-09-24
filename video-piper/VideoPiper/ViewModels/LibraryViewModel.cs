@@ -17,9 +17,15 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private LibraryStore _store = new(string.Empty);
     private string _rootPath = string.Empty;
     private string _url = string.Empty;
+    private string _searchQuery = string.Empty;
+    private string _localSearchQuery = string.Empty;
     private MediaKind _kind = MediaKind.Audio;
     private bool _isDownloading;
     private bool _isFetching;
+    private bool _isSearching;
+    private bool _hasSearchResults;
+    private bool _isUrlInput;
+    private int _filterIndex; // 0 = Alla, 1 = Ljud, 2 = Video
     private string? _jobTitle;
     private double _jobPercent;
     private string? _jobPosition;
@@ -30,8 +36,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _searchCts;
 
     public ObservableCollection<LibraryItem> Items { get; } = new();
-
-    /// <summary>Search results (empty when no search has run or the query was cleared).</summary>
+    public ObservableCollection<LibraryItem> FilteredItems { get; } = new();
     public ObservableCollection<SearchResult> SearchResults { get; } = new();
 
     private readonly RelayCommand _browseCommand;
@@ -40,12 +45,18 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private readonly RelayCommand _playSelectedCommand;
     private readonly RelayCommand _removeSelectedCommand;
     private readonly RelayCommand _deleteWithFileSelectedCommand;
+    private readonly RelayCommand _deselectCommand;
     private readonly RelayCommand _resyncCommand;
+    private readonly ParameterizedRelayCommand _playItemCommand;
+    private readonly ParameterizedRelayCommand _openFolderItemCommand;
+    private readonly ParameterizedRelayCommand _deleteItemCommand;
     private readonly ParameterizedRelayCommand _downloadSearchResultCommand;
     private readonly RelayCommand _pasteCommand;
     private readonly RelayCommand _closePlayerCommand;
     private readonly RelayCommand _openFolderSelectedCommand;
+    private readonly RelayCommand _openRootFolderCommand;
     private readonly RelayCommand _clearSearchCommand;
+    private readonly RelayCommand _clearErrorCommand;
 
     public ICommand BrowseCommand => _browseCommand;
     public ICommand DownloadCommand => _downloadCommand;
@@ -53,12 +64,18 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     public ICommand PlaySelectedCommand => _playSelectedCommand;
     public ICommand RemoveSelectedCommand => _removeSelectedCommand;
     public ICommand DeleteWithFileSelectedCommand => _deleteWithFileSelectedCommand;
+    public ICommand DeselectCommand => _deselectCommand;
     public ICommand ResyncCommand => _resyncCommand;
+    public ICommand PlayItemCommand => _playItemCommand;
+    public ICommand OpenFolderItemCommand => _openFolderItemCommand;
+    public ICommand DeleteItemCommand => _deleteItemCommand;
     public ICommand DownloadSearchResultCommand => _downloadSearchResultCommand;
     public ICommand PasteCommand => _pasteCommand;
     public ICommand ClosePlayerCommand => _closePlayerCommand;
     public ICommand OpenFolderSelectedCommand => _openFolderSelectedCommand;
+    public ICommand OpenRootFolderCommand => _openRootFolderCommand;
     public ICommand ClearSearchCommand => _clearSearchCommand;
+    public ICommand ClearErrorCommand => _clearErrorCommand;
 
     public LibraryViewModel()
     {
@@ -68,18 +85,23 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         _playSelectedCommand = new RelayCommand(PlaySelectedAsync, () => SelectedItem is { Status: ItemStatus.Complete } && !string.IsNullOrEmpty(SelectedItem.FilePath));
         _removeSelectedCommand = new RelayCommand(RemoveSelectedAsync, () => SelectedItem is not null);
         _deleteWithFileSelectedCommand = new RelayCommand(DeleteWithFileSelectedAsync, () => SelectedItem is not null);
+        _deselectCommand = new RelayCommand(() => { SelectedItem = null; return Task.CompletedTask; });
+        _openFolderSelectedCommand = new RelayCommand(OpenFolderSelectedAsync, () => SelectedItem is not null);
+        _openRootFolderCommand = new RelayCommand(OpenRootFolder);
         _resyncCommand = new RelayCommand(ResyncAsync, () => !IsDownloading);
+
+        _playItemCommand = new ParameterizedRelayCommand(p => PlayItemAsync(p as LibraryItem));
+        _openFolderItemCommand = new ParameterizedRelayCommand(p => OpenFolderItem(p as LibraryItem));
+        _deleteItemCommand = new ParameterizedRelayCommand(p => DeleteItemAsync(p as LibraryItem));
         _downloadSearchResultCommand = new ParameterizedRelayCommand(DownloadSearchResultAsync, p => p is SearchResult && !IsBusy);
+
         _pasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
         _closePlayerCommand = new RelayCommand(ClosePlayer);
-        _openFolderSelectedCommand = new RelayCommand(OpenFolderSelectedAsync, () => SelectedItem is not null && !string.IsNullOrEmpty(SelectedItem.FilePath));
         _clearSearchCommand = new RelayCommand(ClearSearch);
+        _clearErrorCommand = new RelayCommand(() => { Error = null; return Task.CompletedTask; });
     }
 
-    private string _searchQuery = string.Empty;
-    private bool _isSearching;
-
-    /// <summary>Debounced search box text — typing triggers a YouTube search after a short pause.</summary>
+    /// <summary>Unified search/URL box text. If a URL is entered, it enables download mode; otherwise debounces YouTube search.</summary>
     public string SearchQuery
     {
         get => _searchQuery;
@@ -90,6 +112,21 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 return;
             }
 
+            var trimmed = value.Trim();
+            if (IsYouTubeUrl(trimmed))
+            {
+                _searchCts?.Cancel();
+                IsSearching = false;
+                HasSearchResults = false;
+                SearchResults.Clear();
+                Url = trimmed;
+                IsUrlInput = true;
+                return;
+            }
+
+            IsUrlInput = false;
+            Url = string.Empty;
+
             // Debounce: cancel any in-flight/pending search and start a fresh one.
             _searchCts?.Cancel();
             var cts = new CancellationTokenSource();
@@ -97,6 +134,63 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             _ = RunSearchAsync(value, cts.Token);
         }
     }
+
+    public static bool IsYouTubeUrl(string s) =>
+        !string.IsNullOrWhiteSpace(s) &&
+        (s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+         s.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+         s.StartsWith("youtu.be/", StringComparison.OrdinalIgnoreCase) ||
+         s.StartsWith("youtube.com/", StringComparison.OrdinalIgnoreCase) ||
+         s.StartsWith("www.youtube.com/", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsUrlInput
+    {
+        get => _isUrlInput;
+        private set
+        {
+            if (Set(ref _isUrlInput, value))
+            {
+                OnPropertyChanged(nameof(CanDownload));
+                _downloadCommand.RefreshCanExecute();
+            }
+        }
+    }
+
+    /// <summary>Optional filter text to search within already downloaded items in the local library.</summary>
+    public string LocalSearchQuery
+    {
+        get => _localSearchQuery;
+        set
+        {
+            if (Set(ref _localSearchQuery, value))
+            {
+                RefreshFilteredItems();
+            }
+        }
+    }
+
+    public int FilterIndex
+    {
+        get => _filterIndex;
+        set
+        {
+            if (Set(ref _filterIndex, value))
+            {
+                RefreshFilteredItems();
+                OnPropertyChanged(nameof(IsAllFilterSelected));
+                OnPropertyChanged(nameof(IsAudioFilterSelected));
+                OnPropertyChanged(nameof(IsVideoFilterSelected));
+            }
+        }
+    }
+
+    public bool IsAllFilterSelected => _filterIndex == 0;
+    public bool IsAudioFilterSelected => _filterIndex == 1;
+    public bool IsVideoFilterSelected => _filterIndex == 2;
+
+    public int TotalCount => Items.Count;
+    public int AudioCount => Items.Count(i => i.Kind == MediaKind.Audio);
+    public int VideoCount => Items.Count(i => i.Kind == MediaKind.Video);
 
     public bool IsSearching
     {
@@ -121,11 +215,10 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             if (Set(ref _hasSearchResults, value))
             {
                 OnPropertyChanged(nameof(HasSearchResults));
+                OnPropertyChanged(nameof(ShowEmptyState));
             }
         }
     }
-
-    private bool _hasSearchResults;
 
     private async Task RunSearchAsync(string query, CancellationToken cancellationToken)
     {
@@ -189,13 +282,15 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             return;
         }
 
-        // Route through the normal download pipeline with a single synthesized entry.
         var entry = new MediaEntry(
             Id: result.Id,
             Title: result.Title,
             Uploader: result.Uploader,
             DurationSeconds: result.DurationSeconds,
             Url: $"https://www.youtube.com/watch?v={result.Id}");
+
+        // Clear search so user sees their new item appearing in the library
+        ClearSearch();
 
         await DownloadManyCoreAsync(new[] { entry }, playlistTitle: null);
     }
@@ -219,19 +314,26 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     }
 
     public bool IsItemSelected => _selectedItem is not null;
-
     public bool HasItems => Items.Count > 0;
-
-    public bool ShowEmptyState => Items.Count == 0 && !HasSearchResults && !IsBusy;
+    public bool HasFilteredItems => FilteredItems.Count > 0;
+    public bool ShowEmptyState => FilteredItems.Count == 0 && !HasSearchResults && !IsBusy;
 
     public string RootPath
     {
         get => _rootPath;
-        private set => Set(ref _rootPath, value);
+        private set
+        {
+            if (Set(ref _rootPath, value))
+            {
+                OnPropertyChanged(nameof(RootPathDisplay));
+                OnPropertyChanged(nameof(IsRootSet));
+                OnPropertyChanged(nameof(CanDownload));
+                _downloadCommand.RefreshCanExecute();
+            }
+        }
     }
 
     public string RootPathDisplay => string.IsNullOrWhiteSpace(_rootPath) ? "Välj biblioteksmapp..." : _rootPath;
-
     public bool IsRootSet => !string.IsNullOrWhiteSpace(_rootPath);
 
     public string Url
@@ -257,6 +359,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 PreferencesService.SetFormat(value);
                 OnPropertyChanged(nameof(IsAudioSelected));
                 OnPropertyChanged(nameof(IsVideoSelected));
+                OnPropertyChanged(nameof(FormatBadgeText));
             }
         }
     }
@@ -268,6 +371,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     }
 
     public bool IsVideoSelected => _kind == MediaKind.Video;
+    public string FormatBadgeText => _kind == MediaKind.Audio ? "MP3 (Ljud)" : "MP4 (Video)";
 
     public bool IsDownloading
     {
@@ -345,7 +449,11 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
 
     public bool IsPlayerVisible => _playingItem is not null;
 
-    public bool CanDownload => !IsBusy && IsRootSet && !string.IsNullOrWhiteSpace(Url) && Url.Trim().StartsWith("http", StringComparison.OrdinalIgnoreCase);
+    public bool CanDownload =>
+        !IsBusy &&
+        IsRootSet &&
+        ((!string.IsNullOrWhiteSpace(Url) && Url.Trim().StartsWith("http", StringComparison.OrdinalIgnoreCase)) ||
+         IsYouTubeUrl(SearchQuery));
 
     public async Task InitializeAsync()
     {
@@ -353,7 +461,26 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         var root = PreferencesService.GetLibraryRoot();
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
-            root = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            var myMusic = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            if (!string.IsNullOrWhiteSpace(myMusic) && Directory.Exists(myMusic))
+            {
+                root = Path.Combine(myMusic, "VideoPiper");
+            }
+            else
+            {
+                var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                root = Path.Combine(userProfile, "Music", "VideoPiper");
+            }
+        }
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            PreferencesService.SetLibraryRoot(root);
+        }
+        catch
+        {
+            // Best effort
         }
 
         await OpenStoreAsync(root);
@@ -381,6 +508,12 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
 
     private async Task DownloadAsync()
     {
+        var targetUrl = !string.IsNullOrWhiteSpace(Url) ? Url.Trim() : SearchQuery.Trim();
+        if (string.IsNullOrWhiteSpace(targetUrl))
+        {
+            return;
+        }
+
         Error = null;
         _downloadCts = new CancellationTokenSource();
         IsFetching = true;
@@ -390,13 +523,15 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
 
         try
         {
-            var url = Url.Trim();
-            var (entries, playlistTitle) = await LibraryDownloadService.FetchEntriesAsync(url, _downloadCts.Token);
+            var (entries, playlistTitle) = await LibraryDownloadService.FetchEntriesAsync(targetUrl, _downloadCts.Token);
             if (entries.Count == 0)
             {
                 Error = "Inga objekt hittades i länken.";
                 return;
             }
+
+            // Clear search box so user sees library list with newly added downloading items
+            ClearSearch();
 
             IsFetching = false;
             await DownloadManyCoreAsync(entries, playlistTitle);
@@ -455,15 +590,27 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task PlaySelectedAsync()
+    public Task PlayItemAsync(LibraryItem? item)
     {
-        var item = SelectedItem;
-        if (item is null || string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath))
+        if (item is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        if (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath))
+        {
+            Error = $"Filen hittades inte på disk: {item.Title}";
+            return Task.CompletedTask;
+        }
+
+        SelectedItem = item;
         PlayingItem = item;
+        return Task.CompletedTask;
+    }
+
+    private async Task PlaySelectedAsync()
+    {
+        await PlayItemAsync(SelectedItem);
     }
 
     private async Task RemoveSelectedAsync()
@@ -480,9 +627,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         RefreshItems();
     }
 
-    private async Task DeleteWithFileSelectedAsync()
+    public async Task DeleteItemAsync(LibraryItem? item)
     {
-        var item = SelectedItem;
         if (item is null)
         {
             return;
@@ -491,26 +637,43 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
             Title = "Ta bort ur biblioteket?",
-            Content = new Microsoft.UI.Xaml.Controls.TextBlock { Text = $"\"{item.Title}\" tas bort och filen raderas." },
+            Content = new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = $"Vill du radera \"{item.Title}\" från hårddisken eller bara ta bort posten ur biblioteket?",
+                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap
+            },
+            PrimaryButtonText = "Radera fil från disk",
+            SecondaryButtonText = "Bara ur biblioteket",
             CloseButtonText = "Avbryt",
-            PrimaryButtonText = "Radera",
+            DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close,
+            XamlRoot = App.MainWindowInstance?.Content?.XamlRoot
         };
 
         var result = await dialog.ShowAsync();
-        if (result is not Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+        if (result == Microsoft.UI.Xaml.Controls.ContentDialogResult.None)
         {
             return;
         }
 
-        _store.Remove(item.Id, deleteFile: true);
+        var deleteFile = result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary;
+        _store.Remove(item.Id, deleteFile);
         await _store.SaveAsync();
-        SelectedItem = null;
+
+        if (ReferenceEquals(SelectedItem, item))
+        {
+            SelectedItem = null;
+        }
         if (ReferenceEquals(PlayingItem, item))
         {
             PlayingItem = null;
         }
 
         RefreshItems();
+    }
+
+    private async Task DeleteWithFileSelectedAsync()
+    {
+        await DeleteItemAsync(SelectedItem);
     }
 
     private async Task ResyncAsync()
@@ -520,21 +683,35 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         RefreshItems();
         if (changed > 0)
         {
-            Error = $"{changed} objekt(e) saknar fil på disk.";
+            Error = $"{changed} objekt saknade fil på disk och markerades som felaktiga.";
         }
     }
 
     private void UpsertItem(LibraryItem item)
     {
-        var index = Items.IndexOf(item);
+        var index = -1;
+        for (var i = 0; i < Items.Count; i++)
+        {
+            if (Items[i].Id == item.Id)
+            {
+                index = i;
+                break;
+            }
+        }
+
         if (index >= 0)
         {
             Items[index] = item;
         }
         else
         {
-            Items.Add(item);
+            Items.Insert(0, item);
         }
+
+        RefreshFilteredItems();
+        OnPropertyChanged(nameof(TotalCount));
+        OnPropertyChanged(nameof(AudioCount));
+        OnPropertyChanged(nameof(VideoCount));
     }
 
     private async Task PasteAsync()
@@ -544,7 +721,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             var text = await Windows.ApplicationModel.DataTransfer.Clipboard.GetContent().GetTextAsync();
             if (!string.IsNullOrWhiteSpace(text))
             {
-                Url = text.Trim();
+                SearchQuery = text.Trim();
             }
         }
         catch
@@ -558,18 +735,30 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         PlayingItem = null;
     }
 
-    private Task OpenFolderSelectedAsync()
+    public Task OpenFolderItem(LibraryItem? item)
     {
-        var item = SelectedItem;
-        if (item is not null && !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
+        var target = item?.FilePath;
+        if (!string.IsNullOrEmpty(target) && File.Exists(target))
         {
             try
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.FilePath}\"") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{target}\"") { UseShellExecute = true });
+                return Task.CompletedTask;
             }
             catch { }
         }
-        else if (!string.IsNullOrEmpty(RootPath) && Directory.Exists(RootPath))
+
+        return OpenRootFolder();
+    }
+
+    private Task OpenFolderSelectedAsync()
+    {
+        return OpenFolderItem(SelectedItem);
+    }
+
+    public Task OpenRootFolder()
+    {
+        if (!string.IsNullOrEmpty(RootPath) && Directory.Exists(RootPath))
         {
             try
             {
@@ -580,13 +769,15 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
-    private void ClearSearch()
+    public void ClearSearch()
     {
         _searchCts?.Cancel();
         SearchQuery = string.Empty;
         SearchResults.Clear();
         HasSearchResults = false;
         IsSearching = false;
+        IsUrlInput = false;
+        Url = string.Empty;
         OnPropertyChanged(nameof(ShowEmptyState));
     }
 
@@ -595,11 +786,51 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         OnUi(() =>
         {
             Items.Clear();
-            foreach (var item in _store.Items.OrderBy(i => i.AddedUtc))
+            foreach (var item in _store.Items.OrderByDescending(i => i.AddedUtc))
             {
                 Items.Add(item);
             }
+            RefreshFilteredItems();
             OnPropertyChanged(nameof(HasItems));
+            OnPropertyChanged(nameof(TotalCount));
+            OnPropertyChanged(nameof(AudioCount));
+            OnPropertyChanged(nameof(VideoCount));
+        });
+    }
+
+    public void RefreshFilteredItems()
+    {
+        OnUi(() =>
+        {
+            FilteredItems.Clear();
+            var query = _localSearchQuery.Trim();
+            var hasQuery = !string.IsNullOrEmpty(query);
+
+            foreach (var item in Items)
+            {
+                if (FilterIndex == 1 && item.Kind != MediaKind.Audio)
+                {
+                    continue;
+                }
+                if (FilterIndex == 2 && item.Kind != MediaKind.Video)
+                {
+                    continue;
+                }
+                if (hasQuery)
+                {
+                    var inTitle = item.Title.Contains(query, StringComparison.OrdinalIgnoreCase);
+                    var inUploader = item.Uploader?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
+                    var inPlaylist = item.Playlist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
+                    if (!inTitle && !inUploader && !inPlaylist)
+                    {
+                        continue;
+                    }
+                }
+
+                FilteredItems.Add(item);
+            }
+
+            OnPropertyChanged(nameof(HasFilteredItems));
             OnPropertyChanged(nameof(ShowEmptyState));
         });
     }

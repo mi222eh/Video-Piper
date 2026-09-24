@@ -5,51 +5,91 @@
        xmlns:services="using:VideoPiper.Services">
     <Application.Resources>
         <DataTemplate x:Key="LibraryItemTemplate">
-            <Border Margin="0,2,0,2" Padding="12,10,12,10" CornerRadius="10"
+            <Border Margin="0,3,0,3" Padding="12,10,12,10" CornerRadius="10"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1">
-                <Grid ColumnSpacing="10">
+                <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <FontIcon Grid.Column="0" FontSize="16" VerticalAlignment="Center"
-                              Glyph="{Binding IconGlyph}"/>
+                    <!-- Icon box -->
+                    <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            VerticalAlignment="Center">
+                        <FontIcon FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource AccentFillColorDefaultBrush}"
+                                  Glyph="{Binding IconGlyph}"/>
+                    </Border>
 
-                    <StackPanel Grid.Column="1" Spacing="2">
+                    <!-- Details & Progress -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
                         <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
                                    TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{Binding StatusText}" FontSize="11"
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <ProgressBar Height="4" Maximum="100" CornerRadius="2"
+                                     Value="{Binding Percent, FallbackValue=0}"
+                                     IsIndeterminate="{Binding IsIndeterminate, FallbackValue=False}"
+                                     Visibility="{Binding ProgressVisibility, FallbackValue=Collapsed}"/>
                     </StackPanel>
+
+                    <!-- Badge -->
+                    <Border Grid.Column="2" Padding="6,2,6,2" CornerRadius="4"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="{Binding KindLabel}" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Border>
                 </Grid>
             </Border>
         </DataTemplate>
 
         <DataTemplate x:Key="SearchResultTemplate">
-            <Grid Padding="4,6,4,6" ColumnSpacing="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+            <Border Margin="0,3,0,3" Padding="12,10,12,10" CornerRadius="10"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding MetaText}" FontSize="11" TextTrimming="CharacterEllipsis"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                </StackPanel>
+                    <!-- Thumbnail / Video icon placeholder -->
+                    <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            VerticalAlignment="Center">
+                        <FontIcon FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource AccentFillColorDefaultBrush}"
+                                  Glyph="&#xE714;"/>
+                    </Border>
 
-                <Button Grid.Column="1" Padding="10,6,10,6" CornerRadius="6" VerticalAlignment="Center" IsHitTestVisible="False">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE896;" FontSize="13"/>
-                        <TextBlock Text="Ladda ner" FontSize="12" FontWeight="Medium"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding MetaText}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
-                </Button>
-            </Grid>
+
+                    <Button Grid.Column="2" Padding="10,6,10,6" CornerRadius="6" VerticalAlignment="Center"
+                            IsHitTestVisible="False" Style="{ThemeResource AccentButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE896;" FontSize="12"/>
+                            <TextBlock Text="Ladda ner" FontSize="11" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
         </DataTemplate>
     </Application.Resources>
 </Application>
