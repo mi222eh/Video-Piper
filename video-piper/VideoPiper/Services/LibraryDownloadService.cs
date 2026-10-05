@@ -59,28 +59,10 @@ public static class LibraryDownloadService
         CancellationToken cancellationToken)
     {
         var list = entries.ToList();
-        var ytDlpPath = await ResolveYtDlpAsync();
 
         for (var index = 0; index < list.Count; index++)
         {
-            var entry = list[index];
             cancellationToken.ThrowIfCancellationRequested();
-
-            var item = new LibraryItem
-            {
-                Id = entry.Id,
-                Title = entry.Title,
-                Uploader = entry.Uploader,
-                Playlist = playlistTitle,
-                Kind = kind,
-                Status = ItemStatus.Downloading,
-                Percent = 0,
-                DurationSeconds = entry.DurationSeconds,
-            };
-
-            store.AddOrUpdate(item);
-            await store.SaveAsync();
-            onItemChanged?.Invoke(item);
 
             // Report job position (e.g. "2/5") for multi-entry downloads.
             if (list.Count > 1)
@@ -88,45 +70,88 @@ public static class LibraryDownloadService
                 onItemPosition?.Invoke(index + 1, list.Count);
             }
 
-            try
+            await DownloadEntryAsync(store, list[index], playlistTitle, kind, onItemChanged, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Downloads a single entry into the library with per-item progress. The item is added to the store
+    /// before the download starts and finalized afterwards. Failures mark the item <see cref="ItemStatus.Failed"/>
+    /// (kept in the index for retry); cancellation marks it <c>Failed</c> and rethrows.
+    /// Returns the finalized item.
+    /// </summary>
+    public static async Task<LibraryItem> DownloadEntryAsync(
+        LibraryStore store,
+        MediaEntry entry,
+        string? playlistTitle,
+        MediaKind kind,
+        Action<LibraryItem>? onItemChanged,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var item = new LibraryItem
+        {
+            Id = entry.Id,
+            Title = entry.Title,
+            Uploader = entry.Uploader,
+            Playlist = playlistTitle,
+            Kind = kind,
+            Status = ItemStatus.Downloading,
+            Percent = 0,
+            DurationSeconds = entry.DurationSeconds,
+        };
+
+        store.AddOrUpdate(item);
+        await store.SaveAsync();
+        onItemChanged?.Invoke(item);
+
+        var ytDlpPath = await ResolveYtDlpAsync();
+
+        try
+        {
+            var folder = store.ResolveTargetFolder(entry.Uploader, playlistTitle);
+            Directory.CreateDirectory(folder);
+
+            var tools = await SystemService.CheckToolsAsync();
+            var ffmpegLocation = tools.Ffmpeg.Path is not null && File.Exists(tools.Ffmpeg.Path)
+                ? $"--ffmpeg-location \"{Path.GetDirectoryName(tools.Ffmpeg.Path)}\" "
+                : string.Empty;
+
+            var args = kind == MediaKind.Audio
+                ? $"{ffmpegLocation}-x --audio-format mp3 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\""
+                : $"{ffmpegLocation}-f \"{VideoFormat}\" --merge-output-format mp4 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\"";
+
+            await RunYtDlpAsync(ytDlpPath, args, cancellationToken, progress =>
             {
-                var folder = store.ResolveTargetFolder(entry.Uploader, playlistTitle);
-                Directory.CreateDirectory(folder);
+                item.Percent = progress;
+                onItemChanged?.Invoke(item);
+            });
 
-                var tools = await SystemService.CheckToolsAsync();
-                var ffmpegLocation = tools.Ffmpeg.Path is not null && File.Exists(tools.Ffmpeg.Path)
-                    ? $"--ffmpeg-location \"{Path.GetDirectoryName(tools.Ffmpeg.Path)}\" "
-                    : string.Empty;
-
-                var args = kind == MediaKind.Audio
-                    ? $"{ffmpegLocation}-x --audio-format mp3 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\""
-                    : $"{ffmpegLocation}-f \"{VideoFormat}\" --merge-output-format mp4 -P \"{folder}\" -o \"{OutputTemplate}\" --newline --progress \"{entry.Url}\"";
-
-                await RunYtDlpAsync(ytDlpPath, args, cancellationToken, progress =>
-                {
-                    item.Percent = progress;
-                    onItemChanged?.Invoke(item);
-                });
-
-                item.FilePath = FindDownloadedFile(folder, entry.Id, kind);
-                item.Status = ItemStatus.Complete;
-                item.CompletedUtc = DateTimeOffset.UtcNow;
-                item.Error = null;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                item.Status = ItemStatus.Failed;
-                item.Error = ex.Message;
-            }
-
+            item.FilePath = FindDownloadedFile(folder, entry.Id, kind);
+            item.Status = ItemStatus.Complete;
+            item.CompletedUtc = DateTimeOffset.UtcNow;
+            item.Error = null;
+        }
+        catch (OperationCanceledException)
+        {
+            item.Status = ItemStatus.Failed;
+            item.Error = "Nedladdningen avbröts.";
             store.AddOrUpdate(item);
             await store.SaveAsync();
             onItemChanged?.Invoke(item);
+            throw;
         }
+        catch (Exception ex)
+        {
+            item.Status = ItemStatus.Failed;
+            item.Error = ex.Message;
+        }
+
+        store.AddOrUpdate(item);
+        await store.SaveAsync();
+        onItemChanged?.Invoke(item);
+        return item;
     }
 
     private static async Task<string> ResolveYtDlpAsync()

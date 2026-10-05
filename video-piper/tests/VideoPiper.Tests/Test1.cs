@@ -226,3 +226,49 @@ public class SearchServiceTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(first.MetaText));
     }
 }
+
+[TestClass]
+public class DownloadServiceTests
+{
+    [TestMethod]
+    public void ParseDestination_SingleDestinationLine_ReturnsPath()
+    {
+        var path = DownloadService.ParseDestination(new[]
+        {
+            "[destination] /home/user/Music/Queen - Bohemian Rhapsody.mp3",
+        });
+
+        Assert.AreEqual("/home/user/Music/Queen - Bohemian Rhapsody.mp3", path);
+    }
+
+    [TestMethod]
+    public void ParseDestination_MultipleDestinationLines_ReturnsLastPath()
+    {
+        // yt-dlp can restate the destination after merging/conversion — the final path wins.
+        var path = DownloadService.ParseDestination(new[]
+        {
+            "[destination] /music/Video [abc123].mp4.part",
+            "[download] 100% of known size",
+            "[destination] /music/Video [abc123].mp4",
+        });
+
+        Assert.AreEqual("/music/Video [abc123].mp4", path);
+    }
+
+    [TestMethod]
+    public void ParseDestination_NoDestinationLines_ReturnsNull()
+    {
+        var path = DownloadService.ParseDestination(new[]
+        {
+            "[download]  42.0% of 10.00MiB at  1.00MiB/s ETA 00:10",
+        });
+
+        Assert.IsNull(path);
+    }
+
+    [TestMethod]
+    public void ParseDestination_EmptyLines_ReturnsNull()
+    {
+        Assert.IsNull(DownloadService.ParseDestination(Array.Empty<string>()));
+    }
+}

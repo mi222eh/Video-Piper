@@ -77,8 +77,9 @@ public static class DownloadService
             });
 
             var errorLines = new List<string>();
-            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, kind, isError: false, null);
-            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, kind, isError: true, errorLines);
+            var destLines = new List<string>();
+            var stdoutTask = ReadLinesAsync(process.StandardOutput, onProgress, kind, isError: false, null, destLines);
+            var stderrTask = ReadLinesAsync(process.StandardError, onProgress, kind, isError: true, errorLines, null);
 
             await process.WaitForExitAsync(cancellationToken);
             await Task.WhenAll(stdoutTask, stderrTask);
@@ -90,6 +91,7 @@ public static class DownloadService
                     Status = "finished",
                     Percent = 100,
                     Message = "Klar!",
+                    Destination = ParseDestination(destLines),
                 });
             }
             else
@@ -116,7 +118,8 @@ public static class DownloadService
         Action<DownloadProgress> onProgress,
         MediaKind kind,
         bool isError,
-        List<string>? errorLines)
+        List<string>? errorLines,
+        List<string>? destLines)
     {
         string? line;
         while ((line = await reader.ReadLineAsync()) is not null)
@@ -130,6 +133,12 @@ public static class DownloadService
             if (isError && errorLines is not null)
             {
                 errorLines.Add(trimmed);
+            }
+
+            if (!isError && destLines is not null && trimmed.StartsWith("[destination]", StringComparison.OrdinalIgnoreCase))
+            {
+                destLines.Add(trimmed);
+                continue;
             }
 
             var match = ProgressRegex.Match(trimmed);
@@ -162,5 +171,30 @@ public static class DownloadService
                 });
             }
         }
+    }
+
+    /// <summary>
+    /// Extracts the finished file path from yt-dlp's "[destination] &lt;path&gt;" lines
+    /// (the last one wins, since merging/conversion can restate it). Lines without the
+    /// prefix are ignored.
+    /// </summary>
+    internal static string? ParseDestination(IReadOnlyCollection<string> destLines)
+    {
+        string? path = null;
+        foreach (var line in destLines)
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("[destination]", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidate = trimmed["[destination]".Length..].Trim();
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                path = candidate;
+            }
+        }
+        return path;
     }
 }

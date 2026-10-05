@@ -14,6 +14,7 @@
   <ItemGroup>
     <Compile Include="..\..\VideoPiper\Models\*.cs" Link="Models\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\YtDlpJson.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\DownloadService.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\SearchService.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\LibraryStore.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\PreferencesService.cs" Link="Services\%(Filename)%(Extension)" />

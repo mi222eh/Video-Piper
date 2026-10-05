@@ -14,4 +14,7 @@ public sealed class DownloadProgress
     public string? Speed { get; init; }
 
     public string? Eta { get; init; }
+
+    /// <summary>Absolute path of the finished file, set when <see cref="Status"/> is "finished".</summary>
+    public string? Destination { get; init; }
 }

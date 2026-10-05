@@ -4,6 +4,26 @@
        xmlns:models="using:VideoPiper.Models"
        xmlns:services="using:VideoPiper.Services">
     <Application.Resources>
+        <!--
+            Semantic design tokens (Video Piper).
+            Single source of truth for state colors so dark/light themes stay consistent.
+            Alpha: 0x22 ≈ 13% fill, 0x66 ≈ 40% stroke.
+        -->
+        <Color x:Key="VpSuccessColor">#FF22C55E</Color>
+        <Color x:Key="VpWarningColor">#FFEAB308</Color>
+        <Color x:Key="VpErrorColor">#FFEF4444</Color>
+
+        <SolidColorBrush x:Key="VpSuccessBrush" Color="{StaticResource VpSuccessColor}"/>
+        <SolidColorBrush x:Key="VpWarningBrush" Color="{StaticResource VpWarningColor}"/>
+        <SolidColorBrush x:Key="VpErrorBrush" Color="{StaticResource VpErrorColor}"/>
+
+        <SolidColorBrush x:Key="VpSuccessBgBrush" Color="#2222C55E"/>
+        <SolidColorBrush x:Key="VpSuccessBorderBrush" Color="#6622C55E"/>
+        <SolidColorBrush x:Key="VpWarningBgBrush" Color="#22EAB308"/>
+        <SolidColorBrush x:Key="VpWarningBorderBrush" Color="#66EAB308"/>
+        <SolidColorBrush x:Key="VpErrorBgBrush" Color="#22EF4444"/>
+        <SolidColorBrush x:Key="VpErrorBorderBrush" Color="#66EF4444"/>
+
         <DataTemplate x:Key="LibraryItemTemplate">
             <Border Margin="0,3,0,3" Padding="12,10,12,10" CornerRadius="10"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"

@@ -21,6 +21,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _error;
     private string? _ytDlpVersion;
     private bool _downloadFinished;
+    private string? _destinationFile;
     private bool _toolsReady = true;
     private bool _ytDlpMissing;
     private bool _ffmpegMissing;
@@ -41,6 +42,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand DownloadCommand => _downloadCommand;
     public ICommand StopDownloadCommand => _stopDownloadCommand;
     public ICommand OpenFolderCommand { get; }
+    public ICommand OpenFileCommand { get; }
     public ICommand ResetCommand { get; }
     public ICommand InstallYtDlpCommand => _installYtDlpCommand;
     public ICommand InstallFfmpegCommand => _installFfmpegCommand;
@@ -53,6 +55,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
         _stopDownloadCommand = new RelayCommand(StopDownload, () => IsBusy);
         OpenFolderCommand = new RelayCommand(OpenFolder);
+        OpenFileCommand = new RelayCommand(OpenFile);
         ResetCommand = new RelayCommand(Reset);
         _installYtDlpCommand = new RelayCommand(() => InstallAsync("yt-dlp"), () => !IsBusy && !InstallYtDlpBusy && !InstallFfmpegBusy);
         _installFfmpegCommand = new RelayCommand(() => InstallAsync("ffmpeg"), () => !IsBusy && !InstallYtDlpBusy && !InstallFfmpegBusy);
@@ -262,6 +265,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public bool IsNormalNotBusy => !DownloadFinished && !IsBusy;
 
+    /// <summary>Absolute path to the downloaded file, set when a download completes.</summary>
+    public string? DestinationFile
+    {
+        get => _destinationFile;
+        private set
+        {
+            if (Set(ref _destinationFile, value))
+            {
+                OnPropertyChanged(nameof(HasDestinationFile));
+            }
+        }
+    }
+
+    public bool HasDestinationFile =>
+        !string.IsNullOrEmpty(_destinationFile) && File.Exists(_destinationFile!);
+
     public bool CanDownload => !IsBusy && !InstallYtDlpBusy && !InstallFfmpegBusy && !string.IsNullOrWhiteSpace(Link) && ToolsReady;
 
     public bool IsDark
@@ -383,9 +402,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void OpenFile()
+    {
+        if (!HasDestinationFile)
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _destinationFile!,
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Fall back to opening the containing folder.
+            OpenFolder();
+        }
+    }
+
     private void Reset()
     {
         DownloadFinished = false;
+        DestinationFile = null;
         ShowProgress = false;
         ProgressPercent = 0;
         ProgressSpeed = null;
@@ -478,6 +520,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     ProgressPercent = 100;
                     ProgressSpeed = null;
                     DownloadFinished = true;
+                    DestinationFile = progress.Destination;
                     ShowProgress = true;
                     Link = string.Empty;
                     return;

@@ -16,7 +16,13 @@ public sealed class LibraryStore
     private const string FallbackFolder = "Misc";
     private const int MaxFolderNameLength = 80;
 
-    private static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
+    /// <summary>
+    /// Characters to strip from folder names. On Linux/macOS, <see cref="Path.GetInvalidFileNameChars"/>
+    /// only forbids '/', so the Windows-invalid set is unioned in — otherwise channel/playlist names
+    /// with e.g. ':' or '?' would leak into folder names (valid on Linux, broken on Windows).
+    /// </summary>
+    private static readonly char[] InvalidFolderNameChars =
+        Path.GetInvalidFileNameChars().Concat("<>:\"|?*").Distinct().ToArray();
 
     private sealed record Index(int Version, List<LibraryItem> Items);
 
@@ -199,7 +205,7 @@ public sealed class LibraryStore
             return FallbackFolder;
         }
 
-        var cleaned = new string(name.Select(c => InvalidFileNameChars.Contains(c) ? '_' : c).ToArray()).Trim();
+        var cleaned = new string(name.Select(c => InvalidFolderNameChars.Contains(c) ? '_' : c).ToArray()).Trim();
         if (cleaned.Length > MaxFolderNameLength)
         {
             cleaned = cleaned[..MaxFolderNameLength].TrimEnd('_', ' ');
