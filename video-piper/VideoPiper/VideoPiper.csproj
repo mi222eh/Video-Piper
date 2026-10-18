@@ -35,7 +35,13 @@
     <UnoFeatures>
       CSharpMarkup;
       SkiaRenderer;
+      Hosting;
     </UnoFeatures>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Used by the ambient Log facade (version via central package management). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
 
 </Project>

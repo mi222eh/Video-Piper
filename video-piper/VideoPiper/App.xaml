@@ -2,7 +2,8 @@
        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
        xmlns:models="using:VideoPiper.Models"
-       xmlns:services="using:VideoPiper.Services">
+       xmlns:services="using:VideoPiper.Services"
+       xmlns:converters="using:VideoPiper.Converters">
     <Application.Resources>
         <!--
             Semantic design tokens (Video Piper).
@@ -23,6 +24,9 @@
         <SolidColorBrush x:Key="VpWarningBorderBrush" Color="#66EAB308"/>
         <SolidColorBrush x:Key="VpErrorBgBrush" Color="#22EF4444"/>
         <SolidColorBrush x:Key="VpErrorBorderBrush" Color="#66EF4444"/>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        <converters:StatusToBrushConverter x:Key="StatusToBrush"/>
+
 
         <DataTemplate x:Key="LibraryItemTemplate">
             <Border Margin="0,3,0,3" Padding="12,10,12,10" CornerRadius="10"
@@ -101,13 +105,53 @@
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
 
-                    <Button Grid.Column="2" Padding="10,6,10,6" CornerRadius="6" VerticalAlignment="Center"
-                            IsHitTestVisible="False" Style="{ThemeResource AccentButtonStyle}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE896;" FontSize="12"/>
-                            <TextBlock Text="Ladda ner" FontSize="11" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+                    <!-- Chevron: clicking the row opens the video info page (no download) -->
+                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="12" VerticalAlignment="Center"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- One row in the download queue: status glyph, title, status text, live progress, format badge. -->
+        <DataTemplate x:Key="QueueEntryTemplate">
+            <Border Margin="0,2,0,2" Padding="10,8,10,8" CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Status glyph -->
+                    <FontIcon Grid.Column="0" FontSize="13"
+                              VerticalAlignment="Center"
+                              Glyph="{Binding StatusGlyph}"
+                              Foreground="{Binding Status, Converter={StaticResource StatusToBrush}}"/>
+
+                    <!-- Title + status + per-item progress -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Title}" FontSize="12"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding StatusText}" FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <ProgressBar Height="3" Maximum="100" CornerRadius="2"
+                                     Value="{Binding Percent, FallbackValue=0}"
+                                     IsIndeterminate="{Binding IsDownloading}"
+                                     Visibility="{Binding IsDownloading, FallbackValue=False, Converter={StaticResource BoolToVisibility}}"/>
+                    </StackPanel>
+
+                    <!-- Format badge -->
+                    <Border Grid.Column="2" Padding="6,2,6,2" CornerRadius="4"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="{Binding KindLabel}" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Border>
                 </Grid>
             </Border>
         </DataTemplate>

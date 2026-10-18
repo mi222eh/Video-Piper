@@ -43,6 +43,16 @@ internal static class YtDlpJson
         return ParseEntry(doc.RootElement) ?? throw new InvalidOperationException("Oväntat yt-dlp-svar.");
     }
 
+    /// <summary>
+    /// Extracts the "description" field from a single-video -J document (used by the
+    /// video info page). Returns null when the field is absent or not a string.
+    /// </summary>
+    public static string? GetDescription(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return GetString(doc.RootElement, "description");
+    }
+
     private static MediaEntry? ParseEntry(JsonElement entry)
     {
         var id = GetString(entry, "id");

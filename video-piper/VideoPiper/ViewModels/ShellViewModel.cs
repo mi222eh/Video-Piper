@@ -19,11 +19,12 @@ public sealed class ShellViewModel : INotifyPropertyChanged
 {
     private ShellMode _mode = ShellMode.Simple;
     private bool _isDark = true;
+    private bool _settingsOpen;
     private string? _toolStatus;
 
     public ICommand ToggleModeCommand { get; }
     public ICommand ToggleThemeCommand { get; }
-
+    public ICommand ToggleSettingsCommand { get; }
     public ShellViewModel()
     {
         _mode = PreferencesService.GetAppMode() == AppMode.Library ? ShellMode.Library : ShellMode.Simple;
@@ -35,6 +36,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             SetMode(IsLibrary ? ShellMode.Simple : ShellMode.Library);
         });
         ToggleThemeCommand = new RelayCommand(ToggleTheme);
+        ToggleSettingsCommand = new RelayCommand(() =>
+        {
+            SettingsOpen = !SettingsOpen;
+        });
     }
 
     public bool IsSimple => _mode == ShellMode.Simple;
@@ -71,6 +76,13 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     {
         get => _isDark;
         private set => Set(ref _isDark, value);
+    }
+
+    /// <summary>Whether the settings (Inställningar) page is open.</summary>
+    public bool SettingsOpen
+    {
+        get => _settingsOpen;
+        private set => Set(ref _settingsOpen, value);
     }
 
     private void ToggleTheme()

@@ -146,7 +146,12 @@ def find_iscc() -> str | None:
 
 
 def cmd_installer(args: argparse.Namespace) -> int:
-    """Build the standalone release and package it into a Windows installer."""
+    """Package the standalone Release into a Windows Setup installer and portable ZIP.
+
+    Delegates to ``installer/build_installer.py``, preferring ``uv run`` so no
+    Python environment setup is required. The script handles publish
+    freshness, icon generation, Inno Setup discovery and the build itself.
+    """
     if platform.system() != "Windows":
         print("error: building the Windows installer is only supported on Windows.", file=sys.stderr)
         return 1
@@ -154,67 +159,26 @@ def cmd_installer(args: argparse.Namespace) -> int:
     root = find_project_root()
     repo_root = root if (root / "installer").is_dir() else root.parent
     py_builder = repo_root / "installer" / "build_installer.py"
-
-    if py_builder.is_file():
-        cmd = [sys.executable, str(py_builder), "-v", args.app_version]
-        if args.output:
-            cmd.extend(["-o", str(args.output)])
-        if args.publish:
-            cmd.append("--publish")
-        if getattr(args, "zip_only", False):
-            cmd.append("--zip-only")
-        if getattr(args, "setup_only", False):
-            cmd.append("--setup-only")
-        return subprocess.call(cmd)
-
-    installer_dir = repo_root / "installer"
-    publish_dir = root / "publish"
-    exe_path = publish_dir / "VideoPiper.exe"
-
-    if args.publish or not exe_path.is_file():
-        print("Publishing standalone release...", file=sys.stderr)
-        pub_args = argparse.Namespace(
-            framework=WINDOWS_TFM,
-            configuration="Release",
-            runtime="win-x64",
-            output=str(publish_dir),
-            self_contained=True,
-        )
-        rc = cmd_publish(pub_args)
-        if rc != 0:
-            return rc
-
-    iscc = find_iscc()
-    if not iscc:
-        print(
-            "error: Inno Setup compiler (ISCC.exe) not found.\n"
-            "       Install it via `winget install JRSoftware.InnoSetup` or from https://jrsoftware.org/isdl.php",
-            file=sys.stderr,
-        )
+    if not py_builder.is_file():
+        print(f"error: installer build script not found: {py_builder}", file=sys.stderr)
         return 1
 
-    iss_file = installer_dir / "VideoPiper.iss"
-    output_dir = Path(args.output).resolve() if args.output else installer_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    version = args.app_version
+    uv = shutil.which("uv")
+    if uv:
+        cmd = [uv, "run", "--no-project", "python", str(py_builder), "-v", args.app_version]
+    else:
+        print("notice: uv not found; falling back to the current Python interpreter.", file=sys.stderr)
+        cmd = [sys.executable, str(py_builder), "-v", args.app_version]
 
-    cmd = [
-        iscc,
-        "/Qp",
-        f"/DMyAppVersion={version}",
-        f"/DSourceDir={publish_dir}",
-        f"/O{output_dir}",
-        f"/FVideoPiper-Setup-{version}",
-        str(iss_file),
-    ]
-    print(f"$ {' '.join(cmd)}", file=sys.stderr)
-    rc = subprocess.call(cmd)
-    if rc == 0:
-        setup_exe = output_dir / f"VideoPiper-Setup-{version}.exe"
-        if setup_exe.is_file():
-            size_mb = setup_exe.stat().st_size / (1024 * 1024)
-            print(f"\nInstaller generated: {setup_exe} ({size_mb:.2f} MB)")
-    return rc
+    if args.output:
+        cmd.extend(["-o", str(args.output)])
+    if args.publish:
+        cmd.append("--publish")
+    if getattr(args, "zip_only", False):
+        cmd.append("--zip-only")
+    if getattr(args, "setup_only", False):
+        cmd.append("--setup-only")
+    return subprocess.call(cmd)
 
 
 def _check_tool(name: str, extra_paths: list[str]) -> tuple[bool, str]:
@@ -248,10 +212,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         detail = loc if found else "not found (app can install it in-app, or add to PATH)"
         print(f"  {status} {tool:<10} {detail}")
 
-    # Inno Setup (optional, for installer)
+    # uv (preferred runner for installer/build_installer.py; optional)
+    uv = shutil.which("uv")
+    uv_status = "[ OK ]" if uv else "[INFO]"
+    uv_detail = uv if uv else "not found (optional; `vpp installer` falls back to the current Python)"
+    print(f"  {uv_status} {'uv':<10} {uv_detail}")
+
+    # Inno Setup (needed for `vpp installer`'s Setup executable; ZIP works without it)
     iscc = find_iscc()
-    iscc_status = "[ OK ]" if iscc else "[INFO]"
-    iscc_detail = iscc if iscc else "not found (needed for `vpp installer`: `winget install JRSoftware.InnoSetup`)"
+    iscc_status = "[ OK ]" if iscc else "[MISS]"
+    iscc_detail = iscc if iscc else "not found (`winget install JRSoftware.InnoSetup` for the Setup exe, or use --zip-only)"
     print(f"  {iscc_status} {'Inno Setup':<10} {iscc_detail}")
 
     # Project root sanity

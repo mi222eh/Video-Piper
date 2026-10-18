@@ -66,9 +66,10 @@ public sealed class LibraryStore
                         _items.AddRange(index.Items);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Corrupt index: preserve it for inspection, start fresh.
+                    Log.For(typeof(LibraryStore)).LogWarning(ex, "Index {Path} kunde inte läsas och sparades som .corrupt", IndexFilePath);
                     try
                     {
                         File.Move(IndexFilePath, IndexFilePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
@@ -103,8 +104,8 @@ public sealed class LibraryStore
         }
     }
 
-    /// <summary>Removes the item by id. When <paramref name="deleteFile"/> is set, the media file is deleted too.</summary>
-    public bool Remove(string id, bool deleteFile)
+    /// <summary>Removes the item by id from the index. Returns the removed item, or <c>null</c> if it was not present.</summary>
+    public LibraryItem? Remove(string id)
     {
         LibraryItem? removed;
         lock (_gate)
@@ -112,25 +113,80 @@ public sealed class LibraryStore
             var existing = _items.FirstOrDefault(i => i.Id == id);
             if (existing is null)
             {
-                return false;
+                return null;
             }
             _items.Remove(existing);
             removed = existing;
         }
 
-        if (deleteFile && !string.IsNullOrEmpty(removed.FilePath))
+        return removed;
+    }
+
+    /// <summary>
+    /// Deletes the item's media file(s) from disk: the recorded final file plus any
+    /// orphaned <c>.part</c> / fragment files left behind by an interrupted download,
+    /// matched by the item's <c>[id]</c> marker in the output template. Best effort —
+    /// a missing folder or locked file is silently ignored.
+    /// </summary>
+    public void DeleteMediaFiles(LibraryItem item)
+    {
+        if (string.IsNullOrEmpty(item.FilePath))
         {
-            try
-            {
-                File.Delete(removed.FilePath);
-            }
-            catch
-            {
-                // File may already be gone; the index entry is removed either way.
-            }
+            return;
         }
 
-        return true;
+        var folder = Path.GetDirectoryName(item.FilePath);
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        var marker = $"[{item.Id}]";
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(folder))
+            {
+                if (file.Contains(marker, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+        catch
+        {
+            // A file may already in use, or the folder may have been removed; nothing to clean up.
+        }
+    }
+
+    /// <summary>
+    /// Removes the now-empty folders that an item's channel/playlist structure created,
+    /// walking up from the item's folder to (but never including) the library root.
+    /// Only truly empty folders are deleted, so siblings and unrelated content are safe.
+    /// </summary>
+    public void DeleteEmptyFolders(string? folder)
+    {
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        var root = Path.GetFullPath(RootPath);
+        var current = Path.GetFullPath(folder);
+
+        try
+        {
+            while (Directory.Exists(current) && !Directory.EnumerateFileSystemEntries(current).Any()
+                   && !string.Equals(current, root, StringComparison.OrdinalIgnoreCase)
+                   && current.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.Delete(current);
+                current = Path.GetDirectoryName(current) ?? string.Empty;
+            }
+        }
+        catch
+        {
+            // A folder may be in use; cleanup is best effort.
+        }
     }
 
     /// <summary>Re-syncs the index with disk: complete items whose file vanished are marked failed.</summary>
@@ -180,6 +236,7 @@ public sealed class LibraryStore
             var tempPath = IndexFilePath + ".tmp";
             File.WriteAllText(tempPath, JsonSerializer.Serialize(new Index(SchemaVersion, _items.ToList())));
             File.Move(tempPath, IndexFilePath, overwrite: true);
+            Log.For(typeof(LibraryStore)).LogDebug("Sparade index med {Count} objekt", _items.Count);
         }
 
         return Task.CompletedTask;

@@ -17,7 +17,7 @@ A lightweight cross-platform desktop application for downloading YouTube videos 
 - 📁 **Native folder picker** — Uses `Windows.Storage.Pickers` for native Windows folder selection dialogs
 - 🎨 **Declarative C# Markup** — Fluent WinUI 3 UI built with Uno Platform C# Markup DSL
 - 🌓 **Dark & Light theme** — Built-in theme switching with persistent user preferences
-- 🛠️ **In-App Tool Installer** — One-click downloader and extractor for missing dependencies (`yt-dlp.exe`, `ffmpeg.exe`)
+- 🛠️ **App-managed tools** — The app installs and manages its **own** `yt-dlp` and `ffmpeg` binaries (system binaries are never used): missing tools install automatically, a **daily background update check** keeps them current, and a **settings page** (gear in the app bar) shows installed/latest per tool with manual check/update buttons
 - 🇸🇪 **Swedish Localization** — All user-facing strings localized in Swedish
 
 ---
@@ -27,7 +27,8 @@ A lightweight cross-platform desktop application for downloading YouTube videos 
 ### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - Windows 10+ (version 2004+) for the native target, **or** Linux/macOS with GTK 3 dev packages for the Skia desktop target
-- `yt-dlp` & `ffmpeg` on PATH (or use the in-app installer)
+- `yt-dlp` & `ffmpeg` — not required on the system; the app installs and updates its own copies automatically
+- [`uv`](https://docs.astral.sh/uv/) — for building installers (optional but recommended; a plain Python 3.9+ works too)
 
 ### Build & Run
 ```bash
@@ -42,25 +43,32 @@ cd video-piper
 dotnet publish VideoPiper/VideoPiper.csproj -c Release -r win-x64 --self-contained true -o ./publish
 ```
 
-### Install & Package (Python / Inno Setup)
-You can package and install Video Piper using the zero-dependency Python tools:
+### Install & Package (Python + uv / Inno Setup)
+Package with the stdlib-only Python builder (run via `uv` — no environment setup):
 
 ```bash
-# Package portable ZIP and setup executable
-python installer/build_installer.py
+# Portable ZIP + Windows Setup installer (publishes first if the bundle is stale)
+uv run --no-project installer/build_installer.py
 
-# Install to %LOCALAPPDATA%\Programs\Video Piper with Start menu & desktop shortcuts
-python installer/install.py
+# Flags: --publish (force republish) · --zip-only · --setup-only · -o <dir>
+```
 
-# Uninstall cleanly
+Or via the `vpp` CLI (`tools/vpp`):
+
+```bash
+vpp installer
+```
+
+Install a portable build (Start menu / desktop shortcuts, Add/Remove registration):
+
+```bash
+python installer/install.py            # from the extracted ZIP
 python installer/install.py --uninstall
 ```
 
-Alternatively, use the `vpp` CLI (`tools/vpp`):
-```bash
-vpp publish --self-contained
-vpp installer
-```
+Prereq for the Setup `.exe`: Inno Setup 6 (`winget install JRSoftware.InnoSetup`) —
+the portable ZIP builds without it. The installer icon is regenerated from
+`app-icon.png` on demand via `uv run --with Pillow installer/convert_icon.py`.
 
 ---
 

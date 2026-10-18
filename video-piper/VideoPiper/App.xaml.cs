@@ -18,14 +18,87 @@ public partial class App : Application
     protected Window? MainWindow { get; private set; }
     public static Window? MainWindowInstance { get; private set; }
 
+    /// <summary>
+    /// The application's service host (built from Uno's Hosting feature). View models and
+    /// services are registered as singletons in <see cref="OnLaunched"/> and resolved from
+    /// <c>Host.Services</>. Set once before navigation to <c>MainPage</c>.
+    /// </summary>
+    public static IHost Host { get; private set; } = null!;
+
+    /// <summary>
+    /// Posts an action to the UI thread. Falls back to executing inline when there is
+    /// no live window (e.g. during startup before OnLaunched, or in unit tests).
+    /// Wired to <c>LibraryItem.PostToUi</c> so model change notifications always fire on the UI thread.
+    /// </summary>
+    public static void PostToUiThread(Action action)
+    {
+        if (MainWindowInstance?.DispatcherQueue is { } queue)
+        {
+            if (queue.HasThreadAccess)
+            {
+                action();
+            }
+            else
+            {
+                queue.TryEnqueue(() => action());
+            }
+        }
+        else
+        {
+            action();
+        }
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Initialize the ambient logging factory (no-op in release builds).
+        InitializeLogging();
         // Load WinUI Resources (kept in code because App.xaml must stay empty for the XamlCompiler)
         Resources.Build(r => r.Merged(
             new Microsoft.UI.Xaml.Controls.XamlControlsResources()));
 
-        MainWindow = new Window { Title = "Video Piper" };
+        // In this Uno/WinAppSDK theme build, the Light entry of XamlControlsResources for
+        // "ApplicationPageBackgroundThemeBrush" resolves to the dark value, so the page
+        // background stays dark in light mode. The app's own ThemeDictionaries are consulted
+        // first by the ThemeResource resolver, so an app-owned token always resolves to the
+        // intended color for the current theme.
+        var pageBg = Application.Current.Resources;
+        pageBg.ThemeDictionaries["Light"] = new ResourceDictionary
+        {
+            ["VpPageBackgroundBrush"] = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0xF3, 0xF3, 0xF3))
+        };
+        pageBg.ThemeDictionaries["Dark"] = new ResourceDictionary
+        {
+            ["VpPageBackgroundBrush"] = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x20, 0x20, 0x20))
+        };
+
+        var builder = this.CreateBuilder(args)
+            .Configure(host => host
+                .ConfigureServices((context, services) =>
+                {
+                    // Services (interface -> implementation, singleton).
+                    services.AddSingleton<Services.IToolUpdateService, Services.ToolUpdateService>();
+                    services.AddSingleton<Services.ISystemService, Services.SystemService>();
+                    services.AddSingleton<Services.IDownloadService, Services.DownloadService>();
+                    services.AddSingleton<Services.ILibraryDownloadService, Services.LibraryDownloadService>();
+                    services.AddSingleton<Services.ISearchService, Services.SearchService>();
+
+                    // View models (resolved from App.Host.Services by MainPage).
+                    services.AddSingleton<ViewModels.MainViewModel>();
+                    services.AddSingleton<ViewModels.LibraryViewModel>();
+                    services.AddSingleton<ViewModels.SettingsViewModel>();
+                }));
+        MainWindow = builder.Window;
+        MainWindow.Title = "Video Piper";
         MainWindowInstance = MainWindow;
+        Host = builder.Build();
+
+        // The LibraryItem model is compiled standalone by the test project (no App
+        // reference), so it cannot reach the dispatcher directly. Wire its
+        // change-notification marshal to the UI thread here: worker threads mutate
+        // bound models, and a PropertyChanged raised off the UI thread throws
+        // COMException in the WinRT binding layer.
+        Models.LibraryItem.PostToUi = PostToUiThread;
 #if DEBUG
         MainWindow.UseStudio();
 #endif
@@ -47,7 +120,7 @@ public partial class App : Application
         if (rootFrame.Content == null)
         {
             // When the navigation stack isn't restored navigate to the first page,
-            // configuring the new page by passing required information as a navigation
+            // configuring the new page by passing relevant information as a navigation
             // parameter
             rootFrame.Navigate(typeof(MainPage), args.Arguments);
         }
@@ -56,6 +129,8 @@ public partial class App : Application
         SetTheme(savedTheme != "light");
 
 #if WINDOWS
+        // Remember + restore the window size (AppWindow is WinAppSDK-only, so this lives
+        // in the Windows block alongside the original fixed 1060x740 resize).
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow);
         if (hwnd != IntPtr.Zero)
         {
@@ -63,7 +138,20 @@ public partial class App : Application
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             if (appWindow is not null)
             {
-                appWindow.Resize(new Windows.Graphics.SizeInt32(1060, 740));
+                var savedSize = Services.PreferencesService.GetWindowSize();
+                appWindow.Resize(savedSize is { } s
+                    ? new Windows.Graphics.SizeInt32(s.Width, s.Height)
+                    : new Windows.Graphics.SizeInt32(1060, 740));
+
+                // Persist the size the moment the window is about to close.
+                appWindow.Closing += (_, _) =>
+                {
+                    var size = appWindow.Size;
+                    if (size.Width > 0 && size.Height > 0)
+                    {
+                        Services.PreferencesService.SetWindowSize(size.Width, size.Height);
+                    }
+                };
             }
         }
 #endif
@@ -76,9 +164,14 @@ public partial class App : Application
 
     public static void SetTheme(bool isDark)
     {
+        var theme = isDark ? ElementTheme.Dark : ElementTheme.Light;
         if (MainWindowInstance?.Content is FrameworkElement root)
         {
-            root.RequestedTheme = isDark ? ElementTheme.Dark : ElementTheme.Light;
+            root.RequestedTheme = theme;
+            if (root is Frame { Content: FrameworkElement page })
+            {
+                page.RequestedTheme = theme;
+            }
         }
     }
 
@@ -156,6 +249,7 @@ public partial class App : Application
         });
 
         global::Uno.Extensions.LogExtensionPoint.AmbientLoggerFactory = factory;
+        Log.Initialize(factory);
 
 #if HAS_UNO
         global::Uno.UI.Adapter.Microsoft.Extensions.Logging.LoggingAdapter.Initialize();

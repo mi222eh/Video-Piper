@@ -14,12 +14,22 @@ public enum AppMode
 }
 
 /// <summary>
+/// How removing a library item treats its media on disk: delete the file(s) (and any
+/// folders left empty), or keep the files and only remove the index entry.
+/// </summary>
+public enum DeleteMode
+{
+    DeleteFiles,
+    KeepFiles,
+}
+
+/// <summary>
 /// Persists user preferences as JSON in the app's local data folder,
 /// replacing the previous localStorage-based storage.
 /// </summary>
 public static class PreferencesService
 {
-    private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot, MediaKind? Format);
+    private sealed record Prefs(string? SavePath, AppMode? Mode, string? LibraryRoot, MediaKind? Format, DeleteMode? DeleteMode, int? MaxHeight, int? MinFps, int? WindowWidth = null, int? WindowHeight = null);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -72,7 +82,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot, current?.Format), JsonOptions));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(path, current?.Mode, current?.LibraryRoot, current?.Format, current?.DeleteMode, current?.MaxHeight, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
         }
         catch
         {
@@ -87,7 +97,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot, current?.Format), JsonOptions));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, mode, current?.LibraryRoot, current?.Format, current?.DeleteMode, current?.MaxHeight, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
         }
         catch
         {
@@ -102,7 +112,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root, current?.Format), JsonOptions));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, root, current?.Format, current?.DeleteMode, current?.MaxHeight, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
         }
         catch
         {
@@ -118,7 +128,7 @@ public static class PreferencesService
         try
         {
             var current = Load();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, format), JsonOptions));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, format, current?.DeleteMode, current?.MaxHeight, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
         }
         catch
         {
@@ -126,6 +136,80 @@ public static class PreferencesService
         }
     }
 
+    /// <summary>How removing a library item treats its files (default: delete files and emptied folders).</summary>
+    public static DeleteMode GetDeleteMode() => Load()?.DeleteMode ?? DeleteMode.DeleteFiles;
+
+    public static void SetDeleteMode(DeleteMode mode)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, current?.Format, mode, current?.MaxHeight, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    /// <summary>Maximum video height for video downloads (default: 1080).</summary>
+    public static int GetMaxHeight() => Load()?.MaxHeight ?? 1080;
+
+    public static void SetMaxHeight(int height)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, current?.Format, current?.DeleteMode, height, current?.MinFps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    /// <summary>Minimum framerate (fps) for video downloads (default: 60; 0 = no minimum).</summary>
+    public static int GetMinFps() => Load()?.MinFps ?? 60;
+
+    public static void SetMinFps(int fps)
+    {
+        try
+        {
+            var current = Load();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, current?.Format, current?.DeleteMode, current?.MaxHeight, fps, current?.WindowWidth, current?.WindowHeight), JsonOptions));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
+
+    /// <summary>The last remembered window size (width x height), or null when never set.</summary>
+    public static (int Width, int Height)? GetWindowSize()
+    {
+        var p = Load();
+        if (p?.WindowWidth is int w && p?.WindowHeight is int h && w >= 400 && h >= 300)
+        {
+            return (w, h);
+        }
+        return null;
+    }
+
+    /// <summary>Remembers the window size (clamped to sane minimums so a collapsed window never poisons the next launch).</summary>
+    public static void SetWindowSize(int width, int height)
+    {
+        try
+        {
+            var current = Load();
+            width = Math.Clamp(width, 400, 4000);
+            height = Math.Clamp(height, 300, 4000);
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(new Prefs(current?.SavePath, current?.Mode, current?.LibraryRoot, current?.Format, current?.DeleteMode, current?.MaxHeight, current?.MinFps, width, height), JsonOptions));
+        }
+        catch
+        {
+            // Best effort: preferences are non-critical.
+        }
+    }
     private static Prefs? Load()
     {
         try

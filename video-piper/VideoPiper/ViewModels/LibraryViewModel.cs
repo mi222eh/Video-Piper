@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Windows.Input;
 using VideoPiper.Models;
 using VideoPiper.Services;
@@ -21,7 +22,7 @@ public enum LibrarySidebarSection
     YouTubeSearch,
 }
 
-public sealed class LibraryViewModel : INotifyPropertyChanged
+public sealed partial class LibraryViewModel : INotifyPropertyChanged
 {
     private LibraryStore _store = new(string.Empty);
     private string _rootPath = string.Empty;
@@ -35,124 +36,16 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     private bool _isUrlInput;
     private int _filterIndex; // 0 = Alla, 1 = Ljud, 2 = Video
     private string? _error;
-    private LibraryItem? _playingItem;
     private LibraryItem? _selectedItem;
     private CancellationTokenSource? _searchCts;
     private int _sortIndex; // 0 = Nyast, 1 = Titel, 2 = Längd
-
-    // Download queue state
-    private readonly System.Collections.Concurrent.ConcurrentQueue<QueueJob> _downloadQueue = new();
-    private readonly object _queueGate = new();
-    private Task? _workerTask;
-    private CancellationTokenSource? _queueCts;
-    private bool _queueRunning;
-    private bool _isFetching;
-    private bool _isDownloading;
-    private int _queueCount;
-    private int _failedCount;
-    private string? _jobTitle;
-    private double _jobPercent;
-    private string? _jobPosition;
-    private bool _isRetryingFailed;
-
-    public ObservableCollection<LibraryItem> Items { get; } = new();
-    public ObservableCollection<LibraryItem> FilteredItems { get; } = new();
-    public ObservableCollection<SearchResult> SearchResults { get; } = new();
-
-    private readonly RelayCommand _browseCommand;
-    private readonly RelayCommand _downloadCommand;
-    private readonly RelayCommand _stopDownloadCommand;
-    private readonly RelayCommand _playSelectedCommand;
-    private readonly RelayCommand _removeSelectedCommand;
-    private readonly RelayCommand _deleteWithFileSelectedCommand;
-    private readonly RelayCommand _deselectCommand;
-    private readonly RelayCommand _resyncCommand;
-    private readonly ParameterizedRelayCommand _playItemCommand;
-    private readonly ParameterizedRelayCommand _openFolderItemCommand;
-    private readonly ParameterizedRelayCommand _deleteItemCommand;
-    private readonly ParameterizedRelayCommand _downloadSearchResultCommand;
-    private readonly RelayCommand _pasteCommand;
-    private readonly RelayCommand _closePlayerCommand;
-    private readonly RelayCommand _openFolderSelectedCommand;
-    private readonly RelayCommand _openRootFolderCommand;
-    private readonly RelayCommand _clearSearchCommand;
-    private readonly RelayCommand _clearErrorCommand;
-    private readonly ParameterizedRelayCommand _selectSectionCommand;
-    private readonly RelayCommand _executeSearchCommand;
-    private readonly RelayCommand _retryFailedCommand;
-    private readonly RelayCommand _clearQueueCommand;
-
-    public ICommand BrowseCommand => _browseCommand;
-    public ICommand DownloadCommand => _downloadCommand;
-    public ICommand StopDownloadCommand => _stopDownloadCommand;
-    public ICommand PlaySelectedCommand => _playSelectedCommand;
-    public ICommand RemoveSelectedCommand => _removeSelectedCommand;
-    public ICommand DeleteWithFileSelectedCommand => _deleteWithFileSelectedCommand;
-    public ICommand DeselectCommand => _deselectCommand;
-    public ICommand ResyncCommand => _resyncCommand;
-    public ICommand PlayItemCommand => _playItemCommand;
-    public ICommand OpenFolderItemCommand => _openFolderItemCommand;
-    public ICommand DeleteItemCommand => _deleteItemCommand;
-    public ICommand DownloadSearchResultCommand => _downloadSearchResultCommand;
-    public ICommand PasteCommand => _pasteCommand;
-    public ICommand ClosePlayerCommand => _closePlayerCommand;
-    public ICommand OpenFolderSelectedCommand => _openFolderSelectedCommand;
-    public ICommand OpenRootFolderCommand => _openRootFolderCommand;
-    public ICommand ClearSearchCommand => _clearSearchCommand;
-    public ICommand ClearErrorCommand => _clearErrorCommand;
-    public ICommand SelectSectionCommand => _selectSectionCommand;
-    public ICommand ExecuteSearchCommand => _executeSearchCommand;
-    public ICommand RetryFailedCommand => _retryFailedCommand;
-    public ICommand ClearQueueCommand => _clearQueueCommand;
-
-    public LibraryViewModel()
-    {
-        _browseCommand = new RelayCommand(BrowseAsync, () => !IsDownloading);
-        _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
-        _stopDownloadCommand = new RelayCommand(StopQueueAsync, () => IsBusy);
-        _playSelectedCommand = new RelayCommand(PlaySelectedAsync, () => SelectedItem is { Status: ItemStatus.Complete } && !string.IsNullOrEmpty(SelectedItem.FilePath));
-        _removeSelectedCommand = new RelayCommand(RemoveSelectedAsync, () => SelectedItem is not null);
-        _deleteWithFileSelectedCommand = new RelayCommand(DeleteWithFileSelectedAsync, () => SelectedItem is not null);
-        _deselectCommand = new RelayCommand(() => { SelectedItem = null; return Task.CompletedTask; });
-        _openFolderSelectedCommand = new RelayCommand(OpenFolderSelectedAsync, () => SelectedItem is not null);
-        _openRootFolderCommand = new RelayCommand(OpenRootFolder);
-        _resyncCommand = new RelayCommand(ResyncAsync, () => !IsDownloading);
-
-        _playItemCommand = new ParameterizedRelayCommand(p => PlayItemAsync(p as LibraryItem));
-        _openFolderItemCommand = new ParameterizedRelayCommand(p => OpenFolderItem(p as LibraryItem));
-        _deleteItemCommand = new ParameterizedRelayCommand(p => DeleteItemAsync(p as LibraryItem));
-        _downloadSearchResultCommand = new ParameterizedRelayCommand(DownloadSearchResultAsync, p => p is SearchResult && IsRootSet);
-
-        _pasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
-        _closePlayerCommand = new RelayCommand(ClosePlayer);
-        _clearSearchCommand = new RelayCommand(ClearSearch);
-        _clearErrorCommand = new RelayCommand(() => { Error = null; return Task.CompletedTask; });
-
-        _selectSectionCommand = new ParameterizedRelayCommand(p =>
-        {
-            if (p is string s)
-            {
-                ActiveSection = s.ToLowerInvariant() switch
-                {
-                    "audio" => LibrarySidebarSection.AudioOnly,
-                    "video" => LibrarySidebarSection.VideoOnly,
-                    "failed" => LibrarySidebarSection.FailedOnly,
-                    "search" => LibrarySidebarSection.YouTubeSearch,
-                    _ => LibrarySidebarSection.AllMedia,
-                };
-            }
-            else if (p is LibrarySidebarSection sec)
-            {
-                ActiveSection = sec;
-            }
-            return Task.CompletedTask;
-        });
-
-        _executeSearchCommand = new RelayCommand(RunSearchNowAsync, () => !IsSearching);
-
-        _retryFailedCommand = new RelayCommand(RetryFailedAsync, () => !IsBusy && FailedCount > 0);
-        _clearQueueCommand = new RelayCommand(ClearQueueAsync, () => QueueCount > 0 && !IsDownloading);
-    }
+    private SearchResult? _selectedSearchResult;
+    private bool _isSearchingDetail;
+    private string? _selectedSearchDetailError;
+    private bool _selectedSearchResultInLibrary;
+    private CancellationTokenSource? _detailCts;
+    private RelayCommand _searchResultAudioCommand;
+    private RelayCommand _searchResultVideoCommand;
 
     public LibrarySidebarSection ActiveSection
     {
@@ -177,6 +70,9 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(SectionTitle));
                 OnPropertyChanged(nameof(EmptyStateTitle));
                 OnPropertyChanged(nameof(EmptyStateHint));
+                // A selected search result only makes sense in the search section —
+                // leave its info page when switching sections.
+                SelectedSearchResult = null;
             }
         }
     }
@@ -215,6 +111,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 IsSearching = false;
                 HasSearchResults = false;
                 SearchResults.Clear();
+                SelectedSearchResult = null;
                 Url = trimmed;
                 IsUrlInput = true;
                 return;
@@ -310,7 +207,8 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             if (Set(ref _isSearching, value))
             {
-                _downloadSearchResultCommand.RefreshCanExecute();
+                OnPropertyChanged(nameof(IsSearching));
+                OnPropertyChanged(nameof(ShowNoResults));
             }
         }
     }
@@ -327,6 +225,9 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(HasSearchResults));
                 OnPropertyChanged(nameof(ShowEmptyState));
+                OnPropertyChanged(nameof(HasResults));
+                OnPropertyChanged(nameof(ShowSearchList));
+                OnPropertyChanged(nameof(ShowNoResults));
             }
         }
     }
@@ -356,11 +257,12 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             Error = null;
             IsSearching = true;
             HasSearchResults = true;
+            SelectedSearchResult = null;
         });
 
         try
         {
-            var results = await SearchService.SearchAsync(trimmed, cts.Token);
+            var results = await _searchService.SearchAsync(trimmed, cts.Token);
             if (cts.IsCancellationRequested)
             {
                 return;
@@ -373,6 +275,9 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 {
                     SearchResults.Add(result);
                 }
+                OnPropertyChanged(nameof(HasResults));
+                OnPropertyChanged(nameof(ShowSearchList));
+                OnPropertyChanged(nameof(ShowNoResults));
             });
         }
         catch (OperationCanceledException)
@@ -382,7 +287,13 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             if (!cts.IsCancellationRequested)
             {
-                OnUi(() => Error = $"Sökningen misslyckades: {ex.Message}");
+                OnUi(() =>
+                {
+                    Error = $"Sökningen misslyckades: {UiErrors.FromException(ex, "okänt fel")}";
+                    SearchResults.Clear();
+                    HasSearchResults = false;
+                    SelectedSearchResult = null;
+                });
             }
         }
         finally
@@ -403,6 +314,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             {
                 SearchResults.Clear();
                 HasSearchResults = false;
+                SelectedSearchResult = null;
             });
             return;
         }
@@ -415,9 +327,10 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             {
                 IsSearching = true;
                 HasSearchResults = true;
+                SelectedSearchResult = null;
             });
 
-            var results = await SearchService.SearchAsync(trimmed, cancellationToken);
+            var results = await _searchService.SearchAsync(trimmed, cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -431,6 +344,9 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 {
                     SearchResults.Add(result);
                 }
+                OnPropertyChanged(nameof(HasResults));
+                OnPropertyChanged(nameof(ShowSearchList));
+                OnPropertyChanged(nameof(ShowNoResults));
             });
         }
         catch (OperationCanceledException)
@@ -441,7 +357,13 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                OnUi(() => Error = $"Sökningen misslyckades: {ex.Message}");
+                OnUi(() =>
+                {
+                    Error = $"Sökningen misslyckades: {UiErrors.FromException(ex, "okänt fel")}";
+                    SearchResults.Clear();
+                    HasSearchResults = false;
+                    SelectedSearchResult = null;
+                });
             }
         }
         finally
@@ -453,52 +375,219 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task DownloadSearchResultAsync(object? parameter)
+    /// <summary>The search result whose info page is open (or null). Selecting one never
+    /// downloads — the info page's buttons do.</summary>
+    public SearchResult? SelectedSearchResult
     {
-        if (parameter is not SearchResult result)
+        get => _selectedSearchResult;
+        set
         {
-            return;
+            if (ReferenceEquals(_selectedSearchResult, value))
+            {
+                return;
+            }
+
+            Set(ref _selectedSearchResult, value);
+            OnPropertyChanged(nameof(HasSelectedSearchResult));
+            OnPropertyChanged(nameof(ShowSearchList));
+            OnPropertyChanged(nameof(ShowNoResults));
+            OnPropertyChanged(nameof(CanDownloadSearchResult));
+            RefreshSearchResultCommands();
+
+            // Reset the per-result detail state, then enrich with the full metadata
+            // (description) in the background. The download buttons work regardless —
+            // they use the flat-search data already in the record.
+            IsSearchingDetail = false;
+            SelectedSearchDetailError = null;
+            if (value is not null)
+            {
+                _ = FetchSearchDetailAsync(value);
+            }
+        }
+    }
+
+    /// <summary>True while the info page is open.</summary>
+    public bool HasSelectedSearchResult => _selectedSearchResult is not null;
+
+    /// <summary>Opens the info page for a search result (row click). Never downloads.</summary>
+    public void SelectSearchResult(SearchResult result) => SelectedSearchResult = result;
+
+    /// <summary>True when the current search has returned at least one result.</summary>
+    public bool HasResults => HasSearchResults && SearchResults.Count > 0;
+
+    /// <summary>The result list is visible when there are results and no info page is open.</summary>
+    public bool ShowSearchList => HasResults && !HasSelectedSearchResult;
+
+    /// <summary>The no-results state: a search finished with zero hits (not loading, no info page open).</summary>
+    public bool ShowNoResults => HasSearchResults && !HasResults && !HasSelectedSearchResult && !IsSearching;
+
+    /// <summary>True while the info page is fetching extra metadata (description).</summary>
+    public bool IsSearchingDetail
+    {
+        get => _isSearchingDetail;
+        private set => Set(ref _isSearchingDetail, value);
+    }
+
+    /// <summary>Error from the detail fetch, shown on the info page (never blocks download).</summary>
+    public string? SelectedSearchDetailError
+    {
+        get => _selectedSearchDetailError;
+        private set => Set(ref _selectedSearchDetailError, value);
+    }
+
+    /// <summary>True when the selected search result is already in the library.</summary>
+    public bool SelectedSearchResultInLibrary => _selectedSearchResultInLibrary;
+
+    /// <summary>Gate for the info page's download buttons.</summary>
+    public bool CanDownloadSearchResult =>
+        _selectedSearchResult is not null
+        && !IsDownloading
+        && !IsBusy
+        && IsRootSet
+        && !_selectedSearchResultInLibrary;
+
+    /// <summary>"Ladda ner ljud" action on the search info page.</summary>
+    public ICommand DownloadSearchResultAudioCommand => _searchResultAudioCommand;
+
+    /// <summary>"Ladda ner video" action on the search info page.</summary>
+    public ICommand DownloadSearchResultVideoCommand => _searchResultVideoCommand;
+
+    /// <summary>Re-queries the two info-page download buttons so their enabled state
+    /// tracks <see cref="CanDownloadSearchResult"/> (WinUI only re-queries on
+    /// CanExecuteChanged). Call from every setter that can change the gate.</summary>
+    private void RefreshSearchResultCommands()
+    {
+        _searchResultAudioCommand?.RefreshCanExecute();
+        _searchResultVideoCommand?.RefreshCanExecute();
+    }
+
+    private async Task FetchSearchDetailAsync(SearchResult result)
+    {
+        _detailCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _detailCts = cts;
+        OnUi(() => IsSearchingDetail = true);
+        try
+        {
+            var json = await _searchService.FetchDetailJsonAsync(result.Id, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+            OnUi(() =>
+            {
+                var description = YtDlpJson.GetDescription(json);
+                if (!ReferenceEquals(_selectedSearchResult, result))
+                {
+                    return;
+                }
+                _selectedSearchResult = result with { Description = description };
+                OnPropertyChanged(nameof(SelectedSearchResult));
+                IsSearchingDetail = false;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            OnUi(() =>
+            {
+                if (ReferenceEquals(_selectedSearchResult, result))
+                {
+                    SelectedSearchDetailError = UiErrors.FromException(ex, "Kunde inte hämta videons detaljer.");
+                }
+                IsSearchingDetail = false;
+            });
+        }
+    }
+
+    /// <summary>Queues the selected search result (or the given one) for download in the
+    /// chosen format. Does not switch sections or the global format toggle — the queue
+    /// panel below the list shows progress.</summary>
+    public Task DownloadSearchResultAsAsync(MediaKind kind, SearchResult? result = null)
+    {
+        var target = result ?? _selectedSearchResult;
+        if (target is null)
+        {
+            return Task.CompletedTask;
         }
 
         var entry = new MediaEntry(
-            Id: result.Id,
-            Title: result.Title,
-            Uploader: result.Uploader,
-            DurationSeconds: result.DurationSeconds,
-            Url: $"https://www.youtube.com/watch?v={result.Id}");
+            Id: target.Id,
+            Title: target.Title,
+            Uploader: target.Uploader,
+            DurationSeconds: target.DurationSeconds,
+            Url: $"https://www.youtube.com/watch?v={target.Id}");
 
         // Skip items that are already in the library (complete, downloading, or queued).
-        var already = Items.Any(i => i.Id == entry.Id) ||
-                       _downloadQueue.Any(q => q.Entry.Id == entry.Id);
-        if (already)
+        if (Items.Any(i => i.Id == entry.Id) || _downloadQueue.Any(q => q.Entry.Id == entry.Id))
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        // Switch to Collection view so user sees their new download appearing with progress
-        ActiveSection = LibrarySidebarSection.AllMedia;
-
-        EnqueueEntries(new[] { entry }, playlistTitle: null);
+        OnUi(() =>
+        {
+            Error = null;
+            EnqueueEntries(new[] { entry }, playlistTitle: null, kindOverride: kind);
+        });
+        return Task.CompletedTask;
     }
 
-    /// <summary>The currently selected item in the list (two-way bound to the ListView).</summary>
+    /// <summary>The item currently selected in the list (two-way bound to the ListView). Selecting it
+    /// loads it into the player without starting playback; the user presses play to begin.</summary>
     public LibraryItem? SelectedItem
     {
         get => _selectedItem;
         set
         {
-            if (!ReferenceEquals(_selectedItem, value))
+            if (ReferenceEquals(_selectedItem, value))
             {
-                Set(ref _selectedItem, value);
-                OnPropertyChanged(nameof(IsItemSelected));
-                _playSelectedCommand.RefreshCanExecute();
-                _openFolderSelectedCommand.RefreshCanExecute();
-                _removeSelectedCommand.RefreshCanExecute();
-                _deleteWithFileSelectedCommand.RefreshCanExecute();
+                return;
+            }
+
+            Set(ref _selectedItem, value);
+            OnPropertyChanged(nameof(IsItemSelected));
+            // A new selection loads the item into the player (no auto-play); the
+            // transport controls' play button (or "Spela") starts playback.
+            PlayingItem = value;
+            // If the file is gone, drop it from the player so the "download it"
+            // prompt shows instead of the video.
+            UpdateSelectedFileMissing();
+            _playSelectedCommand.RefreshCanExecute();
+            _openFolderSelectedCommand.RefreshCanExecute();
+            _deleteSelectedCommand.RefreshCanExecute();
+            _downloadSelectedCommand.RefreshCanExecute();
+        }
+    }
+
+    private bool _selectedFileMissing;
+
+    /// <summary>True when the selected item is complete but its file is missing from disk — the
+    /// player area shows a "download it" prompt instead of the video.</summary>
+    public bool SelectedFileMissing
+    {
+        get => _selectedFileMissing;
+        private set
+        {
+            if (Set(ref _selectedFileMissing, value))
+            {
+                // A missing file can't play — clear the player so the "download
+                // it" prompt shows. When the file comes back (re-download),
+                // load the selected item into the player again (no auto-play).
+                PlayingItem = value ? null : _selectedItem;
+                OnPropertyChanged(nameof(IsPlayerVisible));
             }
         }
     }
 
+    private void UpdateSelectedFileMissing()
+    {
+        var item = _selectedItem;
+        var missing = item is { Status: ItemStatus.Complete }
+                      && (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath));
+        SelectedFileMissing = missing;
+    }
     public bool IsItemSelected => _selectedItem is not null;
     public bool HasItems => Items.Count > 0;
     public bool HasFilteredItems => FilteredItems.Count > 0;
@@ -529,6 +618,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsRootSet));
                 OnPropertyChanged(nameof(CanDownload));
                 _downloadCommand.RefreshCanExecute();
+                RefreshSearchResultCommands();
             }
         }
     }
@@ -573,367 +663,6 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
     public bool IsVideoSelected => _kind == MediaKind.Video;
     public string FormatBadgeText => _kind == MediaKind.Audio ? "MP3 (Ljud)" : "MP4 (Video)";
 
-    public bool IsDownloading
-    {
-        get => _isDownloading;
-        private set
-        {
-            if (Set(ref _isDownloading, value))
-            {
-                OnPropertyChanged(nameof(IsBusy));
-                OnPropertyChanged(nameof(IsQueueActive));
-                _downloadCommand.RefreshCanExecute();
-                _stopDownloadCommand.RefreshCanExecute();
-                _clearQueueCommand.RefreshCanExecute();
-            }
-        }
-    }
-
-    public bool IsFetching
-    {
-        get => _isFetching;
-        private set
-        {
-            if (Set(ref _isFetching, value))
-            {
-                OnPropertyChanged(nameof(IsBusy));
-                OnPropertyChanged(nameof(IsQueueActive));
-                _downloadCommand.RefreshCanExecute();
-                _retryFailedCommand.RefreshCanExecute();
-            }
-        }
-    }
-
-    /// <summary>True while resolving metadata or downloading — the primary busy state.</summary>
-    public bool IsBusy => IsFetching || IsDownloading;
-
-    /// <summary>True while resolving metadata, downloading, or when jobs are still queued — drives the queue card.</summary>
-    public bool IsQueueActive => IsBusy || QueueCount > 0;
-
-    /// <summary>Number of entries waiting in the download queue (excluding the active one).</summary>
-    public int QueueCount
-    {
-        get { lock (_queueGate) { return _queueCount; } }
-        private set
-        {
-            lock (_queueGate)
-            {
-                if (Set(ref _queueCount, value))
-                {
-                    OnPropertyChanged(nameof(IsQueueActive));
-                    OnPropertyChanged(nameof(QueueCountText));
-                    _clearQueueCommand.RefreshCanExecute();
-                }
-            }
-        }
-    }
-
-    /// <summary>Number of library items currently in the failed state.</summary>
-    public int FailedCount
-    {
-        get
-        {
-            lock (_queueGate)
-            {
-                return _failedCount;
-            }
-        }
-        private set
-        {
-            lock (_queueGate)
-            {
-                if (Set(ref _failedCount, value))
-                {
-                    OnPropertyChanged(nameof(HasFailedItems));
-                    _retryFailedCommand.RefreshCanExecute();
-                }
-            }
-        }
-    }
-
-    public bool HasFailedItems => FailedCount > 0;
-
-    /// <summary>Label for the queue card: "Kö 3" or empty.</summary>
-    public string QueueCountText => QueueCount > 0 ? $"Kö {QueueCount}" : string.Empty;
-
-    public string? JobTitle
-    {
-        get => _jobTitle;
-        private set => Set(ref _jobTitle, value);
-    }
-
-    public double JobPercent
-    {
-        get => _jobPercent;
-        private set => Set(ref _jobPercent, value);
-    }
-
-    public string? JobPosition
-    {
-        get => _jobPosition;
-        private set => Set(ref _jobPosition, value);
-    }
-
-    public string? Error
-    {
-        get => _error;
-        private set => Set(ref _error, value);
-    }
-
-    /// <summary>The item currently loaded in the player (local playback).</summary>
-    public LibraryItem? PlayingItem
-    {
-        get => _playingItem;
-        private set
-        {
-            if (!ReferenceEquals(_playingItem, value))
-            {
-                Set(ref _playingItem, value);
-                OnPropertyChanged(nameof(IsPlayerVisible));
-            }
-        }
-    }
-
-    public bool IsPlayerVisible => _playingItem is not null;
-
-    public bool CanDownload =>
-        !IsBusy &&
-        IsRootSet &&
-        ((!string.IsNullOrWhiteSpace(Url) && Url.Trim().StartsWith("http", StringComparison.OrdinalIgnoreCase)) ||
-         IsYouTubeUrl(SearchQuery));
-
-    public async Task InitializeAsync()
-    {
-        Kind = PreferencesService.GetFormat();
-        var root = PreferencesService.GetLibraryRoot();
-        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-        {
-            var myMusic = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-            if (!string.IsNullOrWhiteSpace(myMusic) && Directory.Exists(myMusic))
-            {
-                root = Path.Combine(myMusic, "VideoPiper");
-            }
-            else
-            {
-                var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                root = Path.Combine(userProfile, "Music", "VideoPiper");
-            }
-        }
-
-        try
-        {
-            Directory.CreateDirectory(root);
-            PreferencesService.SetLibraryRoot(root);
-        }
-        catch
-        {
-            // Best effort
-        }
-
-        await OpenStoreAsync(root);
-    }
-
-    private async Task BrowseAsync()
-    {
-        var folder = await FolderPickerService.PickFolderAsync();
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
-        {
-            return;
-        }
-
-        PreferencesService.SetLibraryRoot(folder);
-        await OpenStoreAsync(folder);
-    }
-
-    private async Task OpenStoreAsync(string root)
-    {
-        _store = new LibraryStore(root);
-        await _store.LoadAsync();
-        RootPath = _store.RootPath;
-        RefreshItems();
-    }
-
-    private async Task DownloadAsync()
-    {
-        var targetUrl = !string.IsNullOrWhiteSpace(Url) ? Url.Trim() : SearchQuery.Trim();
-        if (string.IsNullOrWhiteSpace(targetUrl))
-        {
-            return;
-        }
-
-        Error = null;
-        _queueCts ??= new CancellationTokenSource();
-        IsFetching = true;
-        JobTitle = "Hämtar metadata...";
-        JobPercent = 0;
-        JobPosition = null;
-
-        try
-        {
-            var (entries, playlistTitle) = await LibraryDownloadService.FetchEntriesAsync(targetUrl, _queueCts.Token);
-            if (entries.Count == 0)
-            {
-                Error = "Inga objekt hittades i länken.";
-                return;
-            }
-
-            // Clear search box so user sees library list with newly added downloading items
-            ClearSearch();
-
-            EnqueueEntries(entries, playlistTitle);
-        }
-        catch (OperationCanceledException)
-        {
-            Error = "Nedladdningen avbröts.";
-        }
-        catch (Exception ex)
-        {
-            Error = ex.Message;
-        }
-        finally
-        {
-            IsFetching = false;
-        }
-    }
-
-    /// <summary>Queues entries for the download worker and starts it if needed.</summary>
-    private void EnqueueEntries(IEnumerable<MediaEntry> entries, string? playlistTitle)
-    {
-        var list = entries.ToList();
-        if (list.Count == 0)
-        {
-            return;
-        }
-
-        lock (_queueGate)
-        {
-            foreach (var entry in list)
-            {
-                _downloadQueue.Enqueue(new QueueJob(entry, playlistTitle));
-            }
-            QueueCount = _downloadQueue.Count;
-        }
-
-        EnsureWorkerStarted();
-        if (_isRetryingFailed)
-        {
-            _isRetryingFailed = false;
-            Error = null;
-        }
-    }
-
-    private readonly record struct QueueJob(MediaEntry Entry, string? PlaylistTitle);
-
-    private void EnsureWorkerStarted()
-    {
-        lock (_queueGate)
-        {
-            if (_queueRunning || _downloadQueue.IsEmpty)
-            {
-                return;
-            }
-            _queueRunning = true;
-            _workerTask = Task.Run(QueueWorkerAsync);
-        }
-    }
-
-    /// <summary>Downloads queued jobs one at a time until the queue is empty.</summary>
-    private async Task QueueWorkerAsync()
-    {
-        try
-        {
-            while (_downloadQueue.TryDequeue(out var job))
-            {
-                QueueCount--;
-                IsDownloading = true;
-                JobTitle = job.Entry.Title;
-                JobPercent = 0;
-                JobPosition = QueueCount > 0 ? $"Kö {QueueCount}" : null;
-
-                try
-                {
-                    await LibraryDownloadService.DownloadEntryAsync(
-                        _store,
-                        job.Entry,
-                        job.PlaylistTitle,
-                        Kind,
-                        item => OnUi(() =>
-                        {
-                            UpsertItem(item);
-                            JobTitle = item.Title;
-                            JobPercent = item.Percent ?? 0;
-                        }),
-                        _queueCts!.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    Error = "Nedladdningen avbröts.";
-                    // Drain the rest: the user asked to stop.
-                    while (_downloadQueue.TryDequeue(out _))
-                    {
-                        QueueCount--;
-                    }
-                    break;
-                }
-                // Individual failures are marked Failed on the item (retryable) — no worker interruption.
-            }
-        }
-        finally
-        {
-            lock (_queueGate)
-            {
-                _queueRunning = false;
-                _workerTask = null;
-            }
-            IsDownloading = false;
-            JobTitle = null;
-            JobPercent = 0;
-            JobPosition = null;
-        }
-    }
-
-    private Task StopQueueAsync()
-    {
-        _queueCts?.Cancel();
-        return Task.CompletedTask;
-    }
-
-    /// <summary>Removes all not-yet-started jobs from the queue (the active download keeps running).</summary>
-    private Task ClearQueueAsync()
-    {
-        lock (_queueGate)
-        {
-            while (_downloadQueue.TryDequeue(out _))
-            {
-                QueueCount--;
-            }
-        }
-        return Task.CompletedTask;
-    }
-
-    /// <summary>Re-queues every failed item (skipping ids already queued) so they download again.</summary>
-    private Task RetryFailedAsync()
-    {
-        var failed = Items.Where(i => i.Status == ItemStatus.Failed).ToList();
-        if (failed.Count == 0)
-        {
-            return Task.CompletedTask;
-        }
-
-        _isRetryingFailed = true;
-        var entries = failed
-            .Where(i => i.Id is not null)
-            .Select(i => new MediaEntry(
-                Id: i.Id,
-                Title: i.Title,
-                Uploader: i.Uploader,
-                DurationSeconds: i.DurationSeconds,
-                Url: $"https://www.youtube.com/watch?v={i.Id}"))
-            .ToList();
-
-        EnqueueEntries(entries, failed[0].Playlist);
-        return Task.CompletedTask;
-    }
 
     public Task PlayItemAsync(LibraryItem? item)
     {
@@ -948,8 +677,11 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             return Task.CompletedTask;
         }
 
-        SelectedItem = item;
+        // Selecting an item only loads it into the player (no auto-play); the play
+        // button here starts playback explicitly.
         PlayingItem = item;
+        Error = null;
+        UpdateSelectedFileMissing();
         return Task.CompletedTask;
     }
 
@@ -958,7 +690,47 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         await PlayItemAsync(SelectedItem);
     }
 
-    private async Task RemoveSelectedAsync()
+    /// <summary>
+    /// Re-downloads the selected item into the library (used by the player's "file
+    /// saknas" prompt) in the format it was originally saved as. Queues the item in
+    /// the download worker like any other.
+    /// </summary>
+    private Task DownloadSelectedAsync()
+    {
+        return DownloadSelectedAsAsync(SelectedItem?.Kind ?? Kind);
+    }
+
+    /// <summary>
+    /// Queues the selected item for download in a specific format (MP3 or MP4),
+    /// overriding the global format toggle. The item's kind is updated so the list
+    /// badge matches the new target file.
+    /// </summary>
+    public Task DownloadSelectedAsAsync(MediaKind kind)
+    {
+        var item = SelectedItem;
+        if (item is null || string.IsNullOrEmpty(item.Id))
+        {
+            return Task.CompletedTask;
+        }
+
+        item.Kind = kind;
+        _isRetryingFailed = true;
+        EnqueueEntries(new[]
+        {
+            new MediaEntry(
+                Id: item.Id,
+                Title: item.Title,
+                Uploader: item.Uploader,
+                DurationSeconds: item.DurationSeconds,
+                Url: $"https://www.youtube.com/watch?v={item.Id}")
+        }, item.Playlist, kind);
+        Error = null;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Deletes the selected item. The index entry is always removed; the media on disk is
+    /// deleted (plus any emptied folders) unless the delete-mode preference keeps files.</summary>
+    private async Task DeleteSelectedAsync()
     {
         var item = SelectedItem;
         if (item is null)
@@ -966,60 +738,29 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             return;
         }
 
-        _store.Remove(item.Id, deleteFile: false);
-        await _store.SaveAsync();
-        SelectedItem = null;
-        RefreshItems();
-    }
+        var removed = _store.Remove(item.Id);
+        var target = removed ?? item;
 
-    public async Task DeleteItemAsync(LibraryItem? item)
-    {
-        if (item is null)
+        if (PreferencesService.GetDeleteMode() == DeleteMode.DeleteFiles)
         {
-            return;
+            _store.DeleteMediaFiles(target);
+            _store.DeleteEmptyFolders(Path.GetDirectoryName(target.FilePath));
         }
 
-        var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
-        {
-            Title = "Ta bort ur biblioteket?",
-            Content = new Microsoft.UI.Xaml.Controls.TextBlock
-            {
-                Text = $"Vill du radera \"{item.Title}\" från hårddisken eller bara ta bort posten ur biblioteket?",
-                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap
-            },
-            PrimaryButtonText = "Radera fil från disk",
-            SecondaryButtonText = "Bara ur biblioteket",
-            CloseButtonText = "Avbryt",
-            DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close,
-            XamlRoot = App.MainWindowInstance?.Content?.XamlRoot
-        };
-
-        var result = await dialog.ShowAsync();
-        if (result == Microsoft.UI.Xaml.Controls.ContentDialogResult.None)
-        {
-            return;
-        }
-
-        var deleteFile = result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary;
-        _store.Remove(item.Id, deleteFile);
+        Log.For(typeof(LibraryViewModel)).LogInformation(
+            "Tog bort {ItemId} {Title} (fil: {Path}, läge: {Mode})",
+            item.Id, item.Title, item.FilePath, PreferencesService.GetDeleteMode());
         await _store.SaveAsync();
 
-        if (ReferenceEquals(SelectedItem, item))
-        {
-            SelectedItem = null;
-        }
         if (ReferenceEquals(PlayingItem, item))
         {
             PlayingItem = null;
         }
-
+        SelectedItem = null;
         RefreshItems();
+        UpdateSelectedFileMissing();
     }
 
-    private async Task DeleteWithFileSelectedAsync()
-    {
-        await DeleteItemAsync(SelectedItem);
-    }
 
     private async Task ResyncAsync()
     {
@@ -1058,6 +799,30 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TotalCount));
         OnPropertyChanged(nameof(AudioCount));
         OnPropertyChanged(nameof(VideoCount));
+        UpdateSelectedFileMissing();
+
+        SyncSelectedSearchResultInLibrary(item.Id, item.Status);
+    }
+
+    /// <summary>If <paramref name="id"/> is the result on the open info page, update the
+    /// "already in library" flag so the page's download buttons disable once the download
+    /// has registered in the library. Call on the UI thread.</summary>
+    private void SyncSelectedSearchResultInLibrary(string id, ItemStatus status)
+    {
+        if (_selectedSearchResult is null || _selectedSearchResult.Id != id)
+        {
+            return;
+        }
+
+        var inLibrary = status != ItemStatus.Queued && status != ItemStatus.Downloading;
+        if (inLibrary != _selectedSearchResultInLibrary)
+        {
+            _selectedSearchResultInLibrary = inLibrary;
+            OnPropertyChanged(nameof(SelectedSearchResultInLibrary));
+            OnPropertyChanged(nameof(CanDownloadSearchResult));
+            OnPropertyChanged(nameof(SelectedSearchResult));
+            RefreshSearchResultCommands();
+        }
     }
 
     private async Task PasteAsync()
@@ -1078,8 +843,76 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
 
     private void ClosePlayer()
     {
+        // Clear the item first (stops the docked player's source) so the pop-out close
+        // does not briefly resume playback that is about to be torn down.
         PlayingItem = null;
+#if WINDOWS
+        ClosePopOutWindow();
+#endif
     }
+
+    /// <summary>
+    /// Opens the pop-out player window for the current item (created on the UI
+    /// thread). While it is open, the docked player is hidden via
+    /// <see cref="PlayerIsPopOut"/>; closing the window restores the dock.
+    /// No-op on non-Windows (Skia) targets, where pop-out is not available.
+    /// </summary>
+    private void PopOutPlayer()
+    {
+#if WINDOWS
+        var item = PlayingItem;
+        if (item is null || _playerPopOutOpen)
+        {
+            return;
+        }
+
+        var window = new PlayerPopOutWindow(item);
+        window.ClosedChanged += OnPopOutWindowClosed;
+        _popOutWindow = window;
+        _playerPopOutOpen = true;
+        OnPropertyChanged(nameof(PlayerIsPopOut));
+        OnPropertyChanged(nameof(IsDockedPlayerVisible));
+        _popOutPlayerCommand.RefreshCanExecute();
+        window.Activate();
+        window.Configure(item.Kind == MediaKind.Video ? 860 : 520, item.Kind == MediaKind.Video ? 560 : 160);
+#endif
+    }
+#if WINDOWS
+    /// <summary>Raised on the UI thread when the pop-out window closes; restores the dock.</summary>
+    private void OnPopOutWindowClosed(object? sender, EventArgs e)
+    {
+        OnUi(() =>
+        {
+            if (_popOutWindow is not null)
+            {
+                _popOutWindow.ClosedChanged -= OnPopOutWindowClosed;
+                _popOutWindow = null;
+            }
+            _playerPopOutOpen = false;
+            OnPropertyChanged(nameof(PlayerIsPopOut));
+            OnPropertyChanged(nameof(IsDockedPlayerVisible));
+            _popOutPlayerCommand.RefreshCanExecute();
+        });
+    }
+
+    /// <summary>Closes the pop-out window (if any) without clearing <see cref="PlayingItem"/>.</summary>
+    private void ClosePopOutWindow()
+    {
+        if (_popOutWindow is { } window)
+        {
+            window.ClosedChanged -= OnPopOutWindowClosed;
+            _popOutWindow = null;
+            window.Close();
+        }
+        if (_playerPopOutOpen)
+        {
+            _playerPopOutOpen = false;
+            OnPropertyChanged(nameof(PlayerIsPopOut));
+            OnPropertyChanged(nameof(IsDockedPlayerVisible));
+            _popOutPlayerCommand.RefreshCanExecute();
+        }
+    }
+#endif
 
     public Task OpenFolderItem(LibraryItem? item)
     {
@@ -1138,6 +971,7 @@ public sealed class LibraryViewModel : INotifyPropertyChanged
             }
             FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
             RefreshFilteredItems();
+            UpdateSelectedFileMissing();
             OnPropertyChanged(nameof(HasItems));
             OnPropertyChanged(nameof(TotalCount));
             OnPropertyChanged(nameof(AudioCount));

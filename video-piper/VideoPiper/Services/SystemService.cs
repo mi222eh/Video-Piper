@@ -10,11 +10,32 @@ public sealed record SystemStatus(ToolInfo YtDlp, ToolInfo Ffmpeg)
 }
 
 /// <summary>
-/// Detects whether the external media tools (yt-dlp, ffmpeg) are available.
-/// Resolution order: binaries installed by the app (LocalFolder/Tools), then system PATH.
+/// Contract for resolving/ensuring the app-managed media tools (yt-dlp, ffmpeg).
+/// View models depend on this interface so it can be faked in tests.
 /// </summary>
-public static class SystemService
+public interface ISystemService
 {
+    Task<SystemStatus> CheckToolsAsync();
+
+    Task<SystemStatus> EnsureToolsAsync(Action<string>? statusCallback = null);
+}
+
+/// <summary>
+/// Resolves the media tools (yt-dlp, ffmpeg) from the app's own local install
+/// (LocalFolder/Tools). System PATH is intentionally NOT used — the app owns its
+/// binaries and keeps them updated on its own (see ToolUpdateService). Registered as a
+/// singleton in DI. <see cref="ToolsDirectory"/> and <see cref="GetLocalVersionAsync"/>
+/// stay static: they are used by <see cref="ToolUpdateService"/> (which would otherwise
+/// create a circular dependency).
+/// </summary>
+public sealed class SystemService : ISystemService
+{
+    private readonly IToolUpdateService _toolUpdateService;
+
+    public SystemService(IToolUpdateService toolUpdateService)
+    {
+        _toolUpdateService = toolUpdateService;
+    }
     public static string ToolsDirectory
     {
         get
@@ -35,32 +56,37 @@ public static class SystemService
         }
     }
 
-    public static async Task<SystemStatus> CheckToolsAsync()
+    public async Task<SystemStatus> CheckToolsAsync()
     {
-        var ytDlp = await ResolveAsync("yt-dlp", "--version");
-        var ffmpeg = await ResolveAsync("ffmpeg", "-version");
+        var ytDlp = await GetLocalToolAsync("yt-dlp.exe", "--version");
+        var ffmpeg = await GetLocalToolAsync("ffmpeg.exe", "-version");
         return new SystemStatus(ytDlp, ffmpeg);
     }
 
+    /// <summary>Reads the installed version of a local tool, or null when not installed.</summary>
+    public static async Task<string?> GetLocalVersionAsync(string fileName, string versionArg)
+    {
+        var info = await GetLocalToolAsync(fileName, versionArg);
+        return info.Available ? info.Version : null;
+    }
+
     /// <summary>
-    /// Ensures that yt-dlp and ffmpeg binaries are present locally, automatically
-    /// downloading any that are missing and scheduling a background update for yt-dlp.
+    /// Makes sure the local tools exist (installing any that are missing), then runs a
+    /// background update check once per day. The daily gate is a timestamp saved in the
+    /// app's local data folder (see ToolUpdatesPrefs).
     /// </summary>
-    public static async Task<SystemStatus> EnsureToolsAsync(Action<string>? statusCallback = null)
+    public async Task<SystemStatus> EnsureToolsAsync(Action<string>? statusCallback = null)
     {
         Directory.CreateDirectory(ToolsDirectory);
 
         var current = await CheckToolsAsync();
         var toInstall = new List<string>();
-
-        var localYtDlp = Path.Combine(ToolsDirectory, "yt-dlp.exe");
-        if (!File.Exists(localYtDlp) && !current.YtDlp.Available)
+        if (!current.YtDlp.Available)
         {
             toInstall.Add("yt-dlp");
         }
 
-        var localFfmpeg = Path.Combine(ToolsDirectory, "ffmpeg.exe");
-        if (!File.Exists(localFfmpeg) && !current.Ffmpeg.Available)
+        if (!current.Ffmpeg.Available)
         {
             toInstall.Add("ffmpeg");
         }
@@ -68,21 +94,29 @@ public static class SystemService
         if (toInstall.Count > 0)
         {
             statusCallback?.Invoke($"Hämtar verktyg: {string.Join(", ", toInstall)}...");
-            await ToolInstallerService.InstallMissingAsync(toInstall);
+            foreach (var tool in toInstall)
+            {
+                var result = await _toolUpdateService.CheckToolAsync(tool, apply: true);
+                statusCallback?.Invoke(result.Error is null
+                    ? "Verktyg installerade."
+                    : $"Några verktyg kunde inte hämtas ({result.Error})");
+            }
         }
 
-        // Schedule background update for local yt-dlp binary
-        if (File.Exists(localYtDlp))
+        // Daily background update check (both tools), once per day.
+        if (ToolUpdatesPrefs.IsUpdateCheckDue())
         {
+            ToolUpdatesPrefs.MarkChecked();
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await AutoUpdateYtDlpAsync(localYtDlp);
+                    await _toolUpdateService.CheckToolAsync("yt-dlp", apply: true);
+                    await _toolUpdateService.CheckToolAsync("ffmpeg", apply: true);
                 }
                 catch
                 {
-                    // Update check best effort
+                    // Update check is best effort.
                 }
             });
         }
@@ -90,51 +124,18 @@ public static class SystemService
         return await CheckToolsAsync();
     }
 
-    public static async Task<bool> AutoUpdateYtDlpAsync(string localPath)
+    private static async Task<ToolInfo> GetLocalToolAsync(string fileName, string versionArg)
     {
-        try
-        {
-            var psi = new ProcessStartInfo(localPath, "--update")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-
-            using var process = Process.Start(psi);
-            if (process is null)
-            {
-                return false;
-            }
-
-            await process.WaitForExitAsync();
-            return process.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static async Task<ToolInfo> ResolveAsync(string fileName, string versionArg)
-    {
-        // 1. Locally installed copy (from the in-app installer)
-        var localPath = Path.Combine(ToolsDirectory, fileName + ".exe");
+        var localPath = Path.Combine(ToolsDirectory, fileName);
         if (File.Exists(localPath))
         {
-            var localVersion = await RunAsync(localPath, versionArg);
-            if (localVersion is not null)
+            var version = await RunAsync(localPath, versionArg);
+            if (version is not null)
             {
-                return new ToolInfo(true, localVersion, localPath);
+                return new ToolInfo(true, version, localPath);
             }
-        }
 
-        // 2. System PATH
-        var pathVersion = await RunAsync(fileName, versionArg);
-        if (pathVersion is not null)
-        {
-            return new ToolInfo(true, pathVersion, fileName);
+            // Binary present but not runnable (e.g. still downloading) — treat as unavailable.
         }
 
         return new ToolInfo(false, null, null);
@@ -146,6 +147,11 @@ public static class SystemService
         {
             var psi = new ProcessStartInfo(fileName, argument)
             {
+                // The version probe has no natural target folder. Without a working
+                // directory the child inherits the app's CWD, which may be an untrusted
+                // reparse point (WinError 448); SafeWorkingDirectory falls back to a
+                // verified temp directory.
+                WorkingDirectory = SafeWorkingDirectory.Resolve(null),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -162,6 +168,73 @@ public static class SystemService
             await process.WaitForExitAsync();
 
             return process.ExitCode == 0 ? stdout.Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// Persists the timestamp of the last background tool-update check (tools.json in
+/// the app's local data folder) so at most one automatic check runs per day.
+/// Manual checks from the settings page do NOT update this timestamp.
+/// </summary>
+public static class ToolUpdatesPrefs
+{
+    private const int CheckIntervalHours = 24;
+
+    private static string FilePath
+    {
+        get
+        {
+#if WINDOWS || HAS_UNO
+            try
+            {
+                return Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "tools.json");
+            }
+            catch
+            {
+                // Fallback to LocalApplicationData
+            }
+#endif
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoPiper");
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, "tools.json");
+        }
+    }
+
+    private sealed record ToolsPrefs(DateTimeOffset? LastUpdateCheckUtc);
+
+    public static bool IsUpdateCheckDue()
+    {
+        var last = Load()?.LastUpdateCheckUtc;
+        return last is null || DateTimeOffset.UtcNow - last.Value >= TimeSpan.FromHours(CheckIntervalHours);
+    }
+
+    public static void MarkChecked()
+    {
+        try
+        {
+            System.IO.File.WriteAllText(FilePath, System.Text.Json.JsonSerializer.Serialize(new ToolsPrefs(DateTimeOffset.UtcNow)));
+        }
+        catch
+        {
+            // Best effort: a lost timestamp only means an extra check.
+        }
+    }
+
+    private static ToolsPrefs? Load()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(FilePath))
+            {
+                return null;
+            }
+
+            return System.Text.Json.JsonSerializer.Deserialize<ToolsPrefs>(System.IO.File.ReadAllText(FilePath));
         }
         catch
         {

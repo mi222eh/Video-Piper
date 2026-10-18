@@ -85,6 +85,33 @@ public class YtDlpJsonTests
         Assert.AreEqual("Queen Official", entry.Uploader);
         Assert.AreEqual(343.0, entry.DurationSeconds);
     }
+
+    [TestMethod]
+    public void GetDescription_WithDescription_ReturnsIt()
+    {
+        var json = """
+        {
+            "id": "track999",
+            "title": "Radio Ga Ga",
+            "description": "Official music video from Queen."
+        }
+        """;
+
+        Assert.AreEqual("Official music video from Queen.", YtDlpJson.GetDescription(json));
+    }
+
+    [TestMethod]
+    public void GetDescription_MissingDescription_ReturnsNull()
+    {
+        var json = """
+        {
+            "id": "track999",
+            "title": "Radio Ga Ga"
+        }
+        """;
+
+        Assert.IsNull(YtDlpJson.GetDescription(json));
+    }
 }
 
 [TestClass]
@@ -209,14 +236,16 @@ public class SearchServiceTests
     public async Task SearchAsync_WithValidQuery_ReturnsResults()
     {
         // Tests real yt-dlp search execution
-        var status = await SystemService.CheckToolsAsync();
+        var system = new SystemService(new ToolUpdateService());
+        var status = await system.CheckToolsAsync();
         if (!status.YtDlp.Available)
         {
             Assert.Inconclusive("yt-dlp is not available on test environment.");
             return;
         }
 
-        var results = await SearchService.SearchAsync("queen bohemian rhapsody", CancellationToken.None);
+        var search = new SearchService(system);
+        var results = await search.SearchAsync("queen bohemian rhapsody", CancellationToken.None);
 
         Assert.IsNotNull(results);
         Assert.IsTrue(results.Count > 0, "Expected at least 1 search result.");
@@ -224,6 +253,27 @@ public class SearchServiceTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(first.Id));
         Assert.IsFalse(string.IsNullOrWhiteSpace(first.Title));
         Assert.IsFalse(string.IsNullOrWhiteSpace(first.MetaText));
+    }
+
+    [TestMethod]
+    public void DetailText_WithUploaderAndDuration_FormatsBoth()
+    {
+        var r = new SearchResult("abc", "Title", "jawed", 2520.5);
+        Assert.AreEqual("Av jawed · 42:00", r.DetailText);
+    }
+
+    [TestMethod]
+    public void DetailText_WithHourLength_FormatsHms()
+    {
+        var r = new SearchResult("abc", "Title", "jawed", 3703.0);
+        Assert.AreEqual("Av jawed · 1:01:43", r.DetailText);
+    }
+
+    [TestMethod]
+    public void DetailText_NoUploaderNoDuration_ReturnsNull()
+    {
+        var r = new SearchResult("abc", "Title", null, null);
+        Assert.IsNull(r.DetailText);
     }
 }
 
@@ -270,5 +320,221 @@ public class DownloadServiceTests
     public void ParseDestination_EmptyLines_ReturnsNull()
     {
         Assert.IsNull(DownloadService.ParseDestination(Array.Empty<string>()));
+    }
+
+    [TestMethod]
+    public void BuildVideoFormat_NoFpsMinimum_ReturnsHeightCappedFormat()
+    {
+        var format = DownloadService.BuildVideoFormat(1080, 0);
+
+        Assert.IsTrue(format.Contains("height<=1080"));
+        Assert.IsFalse(format.Contains("fps>="), "no fps branch when minFps <= 0");
+        // Starts with the height-capped best video branch.
+        Assert.IsTrue(format.StartsWith("bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/"));
+    }
+
+    [TestMethod]
+    public void BuildVideoFormat_WithFpsMinimum_PrefersFpsBranchFirstThenFallsBack()
+    {
+        var format = DownloadService.BuildVideoFormat(1080, 60);
+
+        // The preferred (fps>=60) branch comes first, then the height-capped fallback.
+        Assert.IsTrue(format.StartsWith("bestvideo[ext=mp4][height<=1080][fps>=60]+bestaudio[ext=m4a]/"));
+        Assert.IsTrue(format.Contains("height<=1080"));
+        Assert.IsTrue(format.Contains("fps>=60"));
+    }
+
+    [TestMethod]
+    public void BuildVideoFormat_HeightCapAppliedInBothBranches()
+    {
+        var format = DownloadService.BuildVideoFormat(720, 30);
+
+        // The height cap is applied to every video sub-branch (fps-preferred + both fallbacks).
+        var occurrences = format.Split("height<=720").Length - 1;
+        Assert.AreEqual(3, occurrences, "height cap appears in the fps-preferred and both fallback branches");
+    }
+
+    [TestMethod]
+    public void BuildVideoOnlyFormat_NeverIncludesAudio()
+    {
+        Assert.IsFalse(DownloadService.BuildVideoOnlyFormat(1080, 0).Contains("bestaudio"));
+        Assert.IsFalse(DownloadService.BuildVideoOnlyFormat(1080, 60).Contains("bestaudio"));
+    }
+
+    [TestMethod]
+    public void BuildVideoOnlyFormat_NoFpsMinimum_ReturnsHeightCappedVideoOnly()
+    {
+        var format = DownloadService.BuildVideoOnlyFormat(1080, 0);
+
+        Assert.IsTrue(format.StartsWith("bestvideo[ext=mp4][height<=1080]/"));
+        Assert.IsFalse(format.Contains("fps>="), "no fps branch when minFps <= 0");
+        Assert.IsFalse(format.Contains("+"), "video-only format never requests an audio stream");
+    }
+
+    [TestMethod]
+    public void BuildVideoOnlyFormat_WithFpsMinimum_PrefersFpsBranchFirstThenFallsBack()
+    {
+        var format = DownloadService.BuildVideoOnlyFormat(720, 30);
+
+        Assert.IsTrue(format.StartsWith("bestvideo[ext=mp4][height<=720][fps>=30]/"));
+        // The height cap is applied to the fps-preferred and both fallback branches.
+        Assert.AreEqual(3, format.Split("height<=720").Length - 1);
+    }
+
+    [TestMethod]
+    public void BuildVideoOnlyFormat_FallsBackToAnyBestVideo()
+    {
+        // The last resort is any best video (no height/codec constraints) — never a combined stream.
+        var format = DownloadService.BuildVideoOnlyFormat(480, 0);
+
+        Assert.IsTrue(format.EndsWith("/bestvideo"));
+        Assert.IsFalse(format.EndsWith("/best") || format.EndsWith("best[ext=mp4]"), "no combined-stream fallback");
+    }
+}
+
+[TestClass]
+public class ToolUpdateServiceTests
+{
+    [TestMethod]
+    public void IsNewerVersion_MissingCurrent_ReturnsTrue()
+    {
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion(null, "2026.08.19"));
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("", "2026.08.19"));
+    }
+
+    [TestMethod]
+    public void IsNewerVersion_UnparseableCurrent_ReturnsTrue()
+    {
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("not a version", "2026.08.19"));
+    }
+
+    [TestMethod]
+    public void IsNewerVersion_UnparseableCandidate_ReturnsFalse()
+    {
+        Assert.IsFalse(ToolUpdateService.IsNewerVersion("2026.08.19", "not a version"));
+    }
+
+    [TestMethod]
+    public void IsNewerVersion_CandidateIsNewer_ReturnsTrue()
+    {
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("2026.07.04", "2026.08.19"));
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("7.1", "7.2"));
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("2026.08.19", "2026.08.20"));
+    }
+
+    [TestMethod]
+    public void IsNewerVersion_CandidateIsOlderOrEqual_ReturnsFalse()
+    {
+        Assert.IsFalse(ToolUpdateService.IsNewerVersion("2026.08.19", "2026.07.04"));
+        Assert.IsFalse(ToolUpdateService.IsNewerVersion("2026.08.19", "2026.08.19"));
+        Assert.IsFalse(ToolUpdateService.IsNewerVersion("7.1", "7.1"));
+    }
+
+    [TestMethod]
+    public void IsNewerVersion_DiffersInLength_ReturnsTrueWhenCandidateLonger()
+    {
+        // 7.1 vs 7.1.1 — the longer candidate is newer.
+        Assert.IsTrue(ToolUpdateService.IsNewerVersion("7.1", "7.1.1"));
+        Assert.IsFalse(ToolUpdateService.IsNewerVersion("7.1.1", "7.1"));
+    }
+
+    [TestMethod]
+    public void TryParseVersion_Empty_ReturnsFalse()
+    {
+        Assert.IsFalse(ToolUpdateService.TryParseVersion(null, out _));
+        Assert.IsFalse(ToolUpdateService.TryParseVersion("", out _));
+        Assert.IsFalse(ToolUpdateService.TryParseVersion("abc", out _));
+    }
+
+    [TestMethod]
+    public void TryParseVersion_FfmpegHeader_ReturnsParts()
+    {
+        Assert.IsTrue(ToolUpdateService.TryParseVersion("ffmpeg version 7.1-full_build Copyright (c) 2000-2025", out var parts));
+        CollectionAssert.AreEqual(new[] { 7, 1 }, parts);
+    }
+
+    [TestMethod]
+    public void FormatVersion_YtDlpOutput_ReturnsVersion()
+    {
+        Assert.AreEqual("2026.08.19", ToolUpdateService.FormatVersion("2026.08.19"));
+    }
+
+    [TestMethod]
+    public void FormatVersion_FfmpegOutput_ReturnsVersion()
+    {
+        Assert.AreEqual("7.1", ToolUpdateService.FormatVersion("ffmpeg version 7.1-full_build Copyright (c) 2000-2025 the FFmpeg developers"));
+    }
+
+    [TestMethod]
+    public void FormatVersion_NoVersion_ReturnsToDetect()
+    {
+        Assert.IsNull(ToolUpdateService.FormatVersion(null));
+        Assert.IsNull(ToolUpdateService.FormatVersion("no version here"));
+    }
+}
+
+[TestClass]
+public class SafeWorkingDirectoryTests
+{
+    private string _tempRoot = string.Empty;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _tempRoot = Path.Combine(Path.GetTempPath(), "VideoPiperTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempRoot);
+    }
+
+    [TestCleanup]
+    public void Cleanup()
+    {
+        if (Directory.Exists(_tempRoot))
+        {
+            try { Directory.Delete(_tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void Resolve_ExistingDirectory_ReturnsItsFullPath()
+    {
+        var result = SafeWorkingDirectory.Resolve(_tempRoot);
+        Assert.AreEqual(Path.GetFullPath(_tempRoot), result);
+    }
+
+    [TestMethod]
+    public void Resolve_MissingDirectory_FallsBackToUsableDirectory()
+    {
+        var missing = Path.Combine(_tempRoot, "does-not-exist", "deeper");
+        var result = SafeWorkingDirectory.Resolve(missing);
+
+        Assert.AreNotEqual(Path.GetFullPath(missing), result);
+        Assert.IsTrue(Directory.Exists(result), $"fallback {result} should exist");
+        Assert.IsTrue(SafeWorkingDirectory.IsUsable(result), $"fallback {result} should be usable");
+    }
+
+    [TestMethod]
+    public void Resolve_NullPreferred_FallsBackToUsableDirectory()
+    {
+        var result = SafeWorkingDirectory.Resolve(null);
+        Assert.IsTrue(Directory.Exists(result), $"fallback {result} should exist");
+        Assert.IsTrue(SafeWorkingDirectory.IsUsable(result), $"fallback {result} should be usable");
+    }
+
+    [TestMethod]
+    public void IsUsable_ExistingDirectory_ReturnsTrue()
+    {
+        Assert.IsTrue(SafeWorkingDirectory.IsUsable(_tempRoot));
+    }
+
+    [TestMethod]
+    public void IsUsable_NonExistentAndFilePaths_ReturnFalse()
+    {
+        Assert.IsFalse(SafeWorkingDirectory.IsUsable(null));
+        Assert.IsFalse(SafeWorkingDirectory.IsUsable(string.Empty));
+        Assert.IsFalse(SafeWorkingDirectory.IsUsable(Path.Combine(_tempRoot, "nope")));
+
+        var file = Path.Combine(_tempRoot, "a.txt");
+        File.WriteAllText(file, "x");
+        Assert.IsFalse(SafeWorkingDirectory.IsUsable(file), "a file is not a usable working directory");
     }
 }

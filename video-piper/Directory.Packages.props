@@ -6,6 +6,8 @@
     See https://aka.platform.uno/using-uno-sdk#implicit-packages for more information regarding the Implicit Packages.
   -->
   <ItemGroup>
+    <!-- Matches the version Uno already pulls in; used by the Log facade and the test project. -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
     <PackageVersion Include="MSTest" Version="3.8.2" />
   </ItemGroup>
 </Project>

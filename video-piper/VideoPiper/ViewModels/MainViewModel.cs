@@ -30,12 +30,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _installStatus;
     private bool _isDark = true;
     private MediaKind _format = MediaKind.Audio;
+    private CancellationTokenSource? _downloadCts;
 
     private readonly RelayCommand _downloadCommand;
     private readonly RelayCommand _stopDownloadCommand;
     private readonly RelayCommand _installYtDlpCommand;
     private readonly RelayCommand _installFfmpegCommand;
-    private CancellationTokenSource? _downloadCts;
+
+    private readonly ISystemService _systemService;
+    private readonly IDownloadService _downloadService;
+    private readonly IToolUpdateService _toolUpdateService;
 
     public ICommand PasteCommand { get; }
     public ICommand BrowseCommand { get; }
@@ -48,8 +52,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand InstallFfmpegCommand => _installFfmpegCommand;
     public ICommand ToggleThemeCommand { get; }
 
-    public MainViewModel()
+    public MainViewModel(ISystemService systemService, IDownloadService downloadService, IToolUpdateService toolUpdateService)
     {
+        _systemService = systemService;
+        _downloadService = downloadService;
+        _toolUpdateService = toolUpdateService;
         PasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
         BrowseCommand = new RelayCommand(BrowseAsync, () => !IsBusy);
         _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
@@ -303,7 +310,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             try
             {
-                var status = await SystemService.EnsureToolsAsync(msg => OnUi(() => InstallStatus = msg));
+                var status = await _systemService.EnsureToolsAsync(msg => OnUi(() => InstallStatus = msg));
                 OnUi(() =>
                 {
                     YtDlpVersion = status.YtDlp.Available ? $"yt-dlp v{StripVersionPrefix(status.YtDlp.Version)}" : null;
@@ -315,14 +322,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
             catch (Exception ex)
             {
-                OnUi(() => InstallStatus = $"Verktygsfel: {ex.Message}");
+                OnUi(() => InstallStatus = $"Verktygsfel: {UiErrors.FromException(ex, "okänt fel")}");
             }
         });
     }
 
     private async Task RefreshToolsAsync()
     {
-        var status = await SystemService.CheckToolsAsync();
+        var status = await _systemService.CheckToolsAsync();
         YtDlpVersion = status.YtDlp.Available ? $"yt-dlp v{StripVersionPrefix(status.YtDlp.Version)}" : null;
         ToolsReady = status.AllAvailable;
         YtDlpMissing = !status.YtDlp.Available;
@@ -464,7 +471,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var url = CleanUrl(Link.Trim());
-            await DownloadService.RunAsync(url, SavePath, Format, _downloadCts.Token, OnProgress);
+            await _downloadService.RunAsync(url, SavePath, Format, _downloadCts.Token, OnProgress);
         }
         catch (OperationCanceledException)
         {
@@ -478,11 +485,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            var message = UiErrors.FromException(ex, "Nedladdningen misslyckades.");
             OnUi(() =>
             {
-                Error = ex.Message;
+                Error = message;
                 ProgressLabel = "Kunde inte ladda ner";
-                ProgressMessage = ex.Message;
+                ProgressMessage = message;
                 ShowProgress = true;
                 DownloadFinished = false;
             });
@@ -553,20 +561,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
             InstallFfmpegBusy = true;
         }
 
-        ToolInstallerService.Progress += OnInstallProgress;
+        _toolUpdateService.Progress += OnInstallProgress;
         try
         {
-            await ToolInstallerService.InstallMissingAsync(new[] { tool });
+            var result = await _toolUpdateService.CheckToolAsync(tool, apply: true);
             await RefreshToolsAsync();
-            InstallStatus = null;
+            InstallStatus = result.Error is not null ? $"Kunde inte hämta {tool}: {result.Error}" : null;
         }
         catch (Exception ex)
         {
-            InstallStatus = $"Kunde inte hämta {tool}: {ex.Message}";
+            InstallStatus = $"Kunde inte hämta {tool}: {UiErrors.FromException(ex, "okänt fel")}";
         }
         finally
         {
-            ToolInstallerService.Progress -= OnInstallProgress;
+            _toolUpdateService.Progress -= OnInstallProgress;
             if (isYtDlp)
             {
                 InstallYtDlpBusy = false;

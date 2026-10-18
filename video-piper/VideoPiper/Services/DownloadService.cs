@@ -6,18 +6,70 @@ using VideoPiper.Models;
 namespace VideoPiper.Services;
 
 /// <summary>
-/// Runs yt-dlp to download a video as MP3 (audio) or MP4 (video), reporting progress line by line.
-/// Mirrors the SSE behavior of the previous Deno backend.
+/// Contract for simple-mode (one-off) downloads. View models depend on this interface
+/// so it can be faked in tests.
 /// </summary>
-public static class DownloadService
+public interface IDownloadService
 {
-    private const string VideoFormat = "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best";
+    Task RunAsync(string targetUrl, string? savePath, MediaKind kind, CancellationToken cancellationToken, Action<DownloadProgress> onProgress);
+}
+
+/// <summary>
+/// Runs yt-dlp to download a video as MP3 (audio) or MP4 (video), reporting progress line by line.
+/// Mirrors the SSE behavior of the previous Deno backend. Registered as a singleton in DI.
+/// <see cref="BuildVideoFormat"/>, <see cref="BuildVideoOnlyFormat"/> and <see cref="ParseDestination"/>
+/// stay static (pure helpers, used directly by tests and <see cref="LibraryDownloadService"/>).
+/// </summary>
+public sealed class DownloadService : IDownloadService
+{
+    private readonly ISystemService _systemService;
+
+    public DownloadService(ISystemService systemService)
+    {
+        _systemService = systemService;
+    }
+    /// <summary>
+    /// Builds the yt-dlp format string for video downloads from the user's quality preferences.
+    /// Prefers the chosen framerate when available, then falls back to the best stream at or below
+    /// the chosen height, so a 60fps preference never breaks a 24/30fps source.
+    /// </summary>
+    public static string BuildVideoFormat(int maxHeight, int minFps)
+    {
+        var baseBranch = $"bestvideo[ext=mp4][height<={maxHeight}]+bestaudio[ext=m4a]/best[ext=mp4][height<={maxHeight}]/best[ext=mp4]/best";
+        if (minFps <= 0)
+        {
+            return baseBranch;
+        }
+
+        var preferred = $"bestvideo[ext=mp4][height<={maxHeight}][fps>={minFps}]+bestaudio[ext=m4a]/";
+        return preferred + baseBranch;
+    }
+
+    /// <summary>
+    /// Builds the yt-dlp format string for downloading **only the video stream** (no audio),
+    /// using the same quality preferences as <see cref="BuildVideoFormat"/>. Used when a local
+    /// MP3 for the item already exists and will be merged into the video with ffmpeg — this
+    /// avoids re-downloading (and re-encoding) the audio. Like <see cref="BuildVideoFormat"/>,
+    /// it prefers the chosen framerate when available and falls back to the best video stream
+    /// at or below the chosen height (the closest available resolution).
+    /// </summary>
+    public static string BuildVideoOnlyFormat(int maxHeight, int minFps)
+    {
+        var baseBranch = $"bestvideo[ext=mp4][height<={maxHeight}]/bestvideo[height<={maxHeight}]/bestvideo";
+        if (minFps <= 0)
+        {
+            return baseBranch;
+        }
+
+        var preferred = $"bestvideo[ext=mp4][height<={maxHeight}][fps>={minFps}]/";
+        return preferred + baseBranch;
+    }
 
     private static readonly Regex ProgressRegex = new(
         @"\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+/s)\s+ETA\s+([\d:]+)",
         RegexOptions.Compiled);
 
-    public static async Task RunAsync(
+    public async Task RunAsync(
         string targetUrl,
         string? savePath,
         MediaKind kind,
@@ -34,7 +86,7 @@ public static class DownloadService
             Message = "Startar nedladdning...",
         });
 
-        var tools = await SystemService.CheckToolsAsync();
+        var tools = await _systemService.CheckToolsAsync();
         var ytDlpPath = tools.YtDlp.Path ?? "yt-dlp";
         var ffmpegLocation = tools.Ffmpeg.Path is not null && File.Exists(tools.Ffmpeg.Path)
             ? $"--ffmpeg-location \"{Path.GetDirectoryName(tools.Ffmpeg.Path)}\" "
@@ -44,11 +96,15 @@ public static class DownloadService
         {
             var args = kind == MediaKind.Audio
                 ? $"{ffmpegLocation}-x --audio-format mp3 --newline --progress \"{targetUrl}\""
-                : $"{ffmpegLocation}-f \"{VideoFormat}\" --merge-output-format mp4 --newline --progress \"{targetUrl}\"";
+                : $"{ffmpegLocation}-f \"{BuildVideoFormat(PreferencesService.GetMaxHeight(), PreferencesService.GetMinFps())}\" --merge-output-format mp4 --newline --progress \"{targetUrl}\"";
 
             var psi = new ProcessStartInfo(ytDlpPath, args)
             {
-                WorkingDirectory = workingDir,
+                // No -P is passed, so the child downloads into its CWD. Route it through
+                // SafeWorkingDirectory: the CWD must be traversable (an untrusted reparse
+                // point would make yt-dlp crash with WinError 448), falling back to a
+                // verified temp directory when the save folder is not usable.
+                WorkingDirectory = SafeWorkingDirectory.Resolve(workingDir),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

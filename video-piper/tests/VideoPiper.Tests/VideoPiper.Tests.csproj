@@ -9,9 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="MSTest" />
+    <!-- The ambient Log facade is compiled into this project too; version via central package management. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\VideoPiper\Log.cs" Link="Log.cs" />
     <Compile Include="..\..\VideoPiper\Models\*.cs" Link="Models\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\YtDlpJson.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\DownloadService.cs" Link="Services\%(Filename)%(Extension)" />
@@ -19,11 +22,15 @@
     <Compile Include="..\..\VideoPiper\Services\LibraryStore.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\PreferencesService.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\SystemService.cs" Link="Services\%(Filename)%(Extension)" />
-    <Compile Include="..\..\VideoPiper\Services\ToolInstallerService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\ToolUpdateService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\SafeWorkingDirectory.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\UiErrors.cs" Link="Services\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <!-- The compiled-in service files call MEL extension methods (LogError/...); mirror the app's global using. -->
+    <Using Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
 </Project>

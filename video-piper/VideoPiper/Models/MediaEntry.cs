@@ -4,7 +4,7 @@ namespace VideoPiper.Models;
 /// Metadata for a single downloadable media item, as reported by yt-dlp.
 /// Used both for playlist pre-fetching and for single downloads.
 /// </summary>
-public sealed record MediaEntry(
+public sealed partial record MediaEntry(
     string Id,
     string Title,
     string? Uploader,

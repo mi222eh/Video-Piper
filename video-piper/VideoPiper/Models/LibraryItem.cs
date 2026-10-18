@@ -231,8 +231,30 @@ public sealed class LibraryItem : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    /// Posts <see cref="PropertyChanged"/> to the UI thread. The model is compiled standalone
+    /// by the test project (no App reference), so the app wires this to its dispatcher.
+    /// Backing fields are assigned synchronously before this is called, so state is always
+    /// current; only the notification is marshaled. When unset, events fire on the calling thread.
+    /// </summary>
+    public static Action<Action>? PostToUi;
+
     private void OnPropertyChanged([CallerMemberName] string? name = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    {
+        var handler = PropertyChanged;
+        if (handler is null)
+        {
+            return;
+        }
+
+        if (PostToUi is not null)
+        {
+            PostToUi(() => handler(this, new PropertyChangedEventArgs(name)));
+            return;
+        }
+
+        handler(this, new PropertyChangedEventArgs(name));
+    }
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
@@ -242,7 +264,7 @@ public sealed class LibraryItem : INotifyPropertyChanged
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        OnPropertyChanged(propertyName);
         return true;
     }
 }

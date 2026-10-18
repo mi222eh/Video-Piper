@@ -9,13 +9,13 @@ target frameworks or paths.
 
 ```bash
 cd tools/vpp
-python3 -m pip install -e .        # adds `vpp` to your PATH
-# or with uv:
-uv pip install -e .
+uv tool install -e .              # adds `vpp` to your PATH (recommended)
+# or without uv:
+python3 -m pip install -e .
 ```
 
-Requires Python 3.9+ and the `.NET 10 SDK`. No other dependencies — the CLI is
-standard-library only and shells out to `dotnet`.
+Requires Python 3.9+ and the `.NET 10 SDK`. No runtime dependencies — the CLI
+is standard-library only and shells out to `dotnet`.
 
 ## Commands
 
@@ -26,8 +26,8 @@ standard-library only and shells out to `dotnet`.
 | `vpp build --clean` | `dotnet clean` first, then build. |
 | `vpp run` | Build and launch the app. |
 | `vpp publish` | Publish a standalone executable (defaults to `win-x64`, Release). |
-| `vpp installer` | Package the standalone Release into a Windows installer (`.exe`) and portable ZIP archive. Flags: `--zip-only`, `--setup-only`, `--publish`. |
-| `vpp doctor` | Check prerequisites: `.NET` SDK, `yt-dlp`, `ffmpeg`, `Inno Setup`, and project detection. |
+| `vpp installer` | Build installer + distribution packages (runs `installer/build_installer.py` via `uv`). Flags: `--publish`, `--zip-only`, `--setup-only`. |
+| `vpp doctor` | Check prerequisites: `.NET` SDK, `yt-dlp`, `ffmpeg`, `uv`, `Inno Setup`, and project detection. |
 
 Useful flags on `build`/`run`: `-c/--configuration` (default `Debug`) and
 `-f/--framework` to override the auto-selected target framework.
