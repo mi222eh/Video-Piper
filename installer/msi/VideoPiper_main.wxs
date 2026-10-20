@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!-- Video Piper MSI (WiX 3.11, per-user, Swedish UI, no WixUI dependency).
+       Standard dialogs (Error/FilesInUse/ExitDialog/FatalError/UserExit/BrowseDlg)
+       adapted from the WiX UIExtension sources (Microsoft Reciprocal License),
+       with Swedish literals and without the banner bitmaps. -->
+  <Product Id="*" Name="Video Piper" Language="1053" Version="1.0.0" Codepage="65001"
+           Manufacturer="Video Piper" UpgradeCode="{2b63227e-bfe0-453b-a035-9a87cf967741}">
+    <Package Id="*" InstallerVersion="200" Compressed="yes" InstallScope="perUser"
+             Description="Video Piper - ladda ner YouTube-video och ljud" />
+
+    <Icon Id="AppIcon" SourceFile="..\app.ico" />
+    <!-- WixUI's info icon (Microsoft Reciprocal License) for the ErrorDlg -->
+    <Binary Id="VpErrorInfoIco" SourceFile="ErrorInfo.ico" />
+
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/" />
+    <Property Id="ARPCONTACT" Value="Video Piper" />
+    <!-- Define VpTargetDir as a property so the PathEdit control (InstallDirDlg)
+         validates (msiexec error 2819 otherwise). Value="INSTALLDIR" binds the
+         property to that directory (WixUI pattern, cf. WIXUI_INSTALLDIR): the
+         default shown in the dialog is INSTALLDIR's default path and
+         updates INSTALLDIR. -->
+    <Property Id="VpTargetDir" Value="INSTALLDIR" />
+
+    <Media Id="1" Cabinet="VideoPiper.cab" EmbedCab="yes" />
+
+    <MajorUpgrade AllowDowngrades="no" DowngradeErrorMessage="En nyare version av Video Piper är redan installerad." Schedule="afterInstallExecute" />
+
+    <!-- Installs to %LOCALAPPDATA%\Programs\Video Piper (per user, no elevation).
+         LocalAppDataFolder is a standard MSI folder property; at install time the
+         row resolves to %LOCALAPPDATA%. -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder" Name="LocalAppData">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLDIR" Name="Video Piper" />
+        </Directory>
+      </Directory>
+      <!-- Declared so the shortcut DirectoryRef below links; resolves to the user's Start Menu -->
+      <Directory Id="ProgramMenuFolder" Name="ProgMenu" />
+    </Directory>
+
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="cmprStartMenuShortcut" Guid="{a405174b-1511-4987-8309-ead32934320d}">
+        <Shortcut Id="cmprShortcutStartMenu" Name="Video Piper"
+                  Target="[INSTALLDIR]VideoPiper.exe" WorkingDirectory="INSTALLDIR"
+                  Icon="AppIcon" />
+        <!-- HKCU registry keypath: standard pattern for start-menu shortcut
+             components (avoids ICE18/ICE43 for per-user installs) -->
+        <RegistryKey Root="HKCU" Key="Software\Video Piper">
+          <RegistryValue Name="StartMenu" Value="1" Type="integer" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+
+<!-- HEAT_FRAGMENTS -->
+
+    <Feature Id="Complete" Title="Video Piper" Description="Hela applikationen."
+             Level="1" Display="expand" ConfigurableDirectory="INSTALLDIR">
+      <ComponentRef Id="cmprStartMenuShortcut" />
+<!-- COMPONENT_REFS -->
+    </Feature>
+
+    <UI>
+      <TextStyle Id="VpFontNormal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="VpFontTitle" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="VpFontNormal" />
+
+      <!-- ================= Welcome ================= -->
+      <Dialog Id="WelcomeDlg" Width="370" Height="270" Title="Video Piper - Installation">
+        <Control Id="Title" Type="Text" X="13" Y="10" Width="284" Height="15" TabSkip="yes">
+          <Text>Video Piper 1.0.0</Text>
+        </Control>
+        <Control Id="Description" Type="Text" X="13" Y="30" Width="344" Height="30" TabSkip="yes">
+          <Text>Denna guide hjälper dig att installera Video Piper på din dator.</Text>
+        </Control>
+        <Control Id="Install" Type="PushButton" X="235" Y="243" Width="56" Height="17" Text="Installera" Default="yes">
+          <Publish Event="NewDialog" Value="InstallDirDlg">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="291" Y="243" Width="56" Height="17" Text="Avbryt" Cancel="yes">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <!-- ================= Install dir ================= -->
+      <Dialog Id="InstallDirDlg" Width="370" Height="270" Title="Video Piper - Installation">
+        <Control Id="Title" Type="Text" X="13" Y="10" Width="284" Height="15" TabSkip="yes">
+          <Text>Välj installationsmapp</Text>
+        </Control>
+        <Control Id="Description" Type="Text" X="13" Y="30" Width="344" Height="30" TabSkip="yes">
+          <Text>Vart ska Video Piper installeras? Installationen görs för ditt användarkonto och kräver ingen administratörbehörighet.</Text>
+        </Control>
+        <Control Id="FolderLabel" Type="Text" X="20" Y="110" Width="290" Height="10" NoPrefix="yes" TabSkip="yes">
+          <Text>Installationsmapp:</Text>
+        </Control>
+        <!-- VpTargetDir is bound to the INSTALLDIR directory (Property Value=INSTALLDIR),
+             so editing the path edits the directory directly - no SetTargetPath needed. Named VpTargetDir (not TargetDir) to avoid colliding with the standard TARGETDIR property (case-insensitive).
+             (SetTargetPath [TargetDir] was deadlocking this button; the property is named VpTargetDir to avoid the standard TARGETDIR collision - ICE46.) -->
+        <Control Id="TargetPath" Type="PathEdit" X="20" Y="125" Width="320" Height="18" Property="VpTargetDir" Indirect="yes" />
+        <Control Id="Browse" Type="PushButton" X="20" Y="150" Width="56" Height="17" Text="Bläddra...">
+          <Publish Event="SpawnDialog" Value="BrowseDlg">1</Publish>
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Tillbaka">
+          <Publish Event="NewDialog" Value="WelcomeDlg">1</Publish>
+        </Control>
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="Vidare" Default="yes">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Text="Avbryt" Cancel="yes">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <!-- ================= Verify ready (WixUI pattern: the last dialog
+           before the install runs fires EndDialog Return) ================= -->
+      <Dialog Id="VerifyReadyDlg" Width="370" Height="270" Title="Video Piper - Installation" TrackDiskSpace="yes">
+        <Control Id="Title" Type="Text" X="13" Y="10" Width="344" Height="15" TabSkip="yes">
+          <Text>Klart att installera</Text>
+        </Control>
+        <Control Id="Description" Type="Text" X="13" Y="30" Width="344" Height="40" TabSkip="yes">
+          <Text>Video Piper installeras till vald mapp. Installationen görs för ditt användarkonto. Klicka på Installera för att börja.</Text>
+        </Control>
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="Installera" Default="yes">
+          <Publish Event="EndDialog" Value="Return">1</Publish>
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Tillbaka">
+          <Publish Event="NewDialog" Value="InstallDirDlg">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Text="Avbryt" Cancel="yes">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <!-- ================= Browse (Swedish) =================
+           The path controls are bound to VpTargetDir directly (which is bound to the
+           INSTALLDIR directory), so a picked folder updates INSTALLDIR on OK. -->
+      <Dialog Id="BrowseDlg" Width="370" Height="270" Title="Välj installationsmapp">
+        <Control Id="PathEdit" Type="PathEdit" X="25" Y="202" Width="320" Height="18" Property="VpTargetDir" Indirect="yes" />
+        <Control Id="OK" Type="PushButton" X="240" Y="243" Width="56" Height="17" Default="yes" Text="OK">
+          <Publish Event="EndDialog" Value="Return">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Avbryt">
+          <Publish Event="Reset" Value="0">1</Publish>
+          <Publish Event="EndDialog" Value="Return">1</Publish>
+        </Control>
+        <Control Id="ComboLabel" Type="Text" X="25" Y="58" Width="44" Height="10" TabSkip="no" Text="Mappar:" />
+        <Control Id="DirectoryCombo" Type="DirectoryCombo" X="70" Y="55" Width="220" Height="80" Property="VpTargetDir" Indirect="yes" Fixed="yes" Remote="yes">
+          <Subscribe Event="IgnoreChange" Attribute="IgnoreChange" />
+        </Control>
+        <Control Id="DirectoryList" Type="DirectoryList" X="25" Y="83" Width="320" Height="98" Property="VpTargetDir" Sunken="yes" Indirect="yes" TabSkip="no" />
+        <Control Id="PathLabel" Type="Text" X="25" Y="190" Width="320" Height="10" TabSkip="no" Text="Sökväg:" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Välj var Video Piper ska installeras." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="Välj installationsmapp" />
+      </Dialog>
+
+      <!-- ================= Execute / progress ================= -->
+      <Dialog Id="ExecuteDlg" Width="370" Height="270" Title="Video Piper - Installation" Modeless="yes">
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="Avbryt">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="Tillbaka" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Disabled="yes" Text="Vidare" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="TitleInstalling" Type="Text" X="20" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Text="Installerar" />
+        <Control Id="TextInstalling" Type="Text" X="20" Y="65" Width="330" Height="35" NoPrefix="yes" Text="Vänligen vänta medan Video Piper installeras." />
+        <Control Id="StatusLabel" Type="Text" X="20" Y="100" Width="50" Height="10" Text="[Progress1]" />
+        <Control Id="ActionText" Type="Text" X="70" Y="100" Width="285" Height="10">
+          <Subscribe Event="ActionText" Attribute="Text" />
+        </Control>
+        <Control Id="ProgressBar" Type="ProgressBar" X="20" Y="115" Width="330" Height="10" ProgressBlocks="yes" Text="Progress2">
+          <Subscribe Event="SetProgress" Attribute="Progress" />
+        </Control>
+      </Dialog>
+
+      <!-- ================= Error dialog (standard, Swedish) =================
+           Mirrors the WiX UIExtension ErrorDlg: msiexec requires the controls
+           ErrorText and ErrorIcon to exist. Exactly ONE control may be in the
+           tab loop (TabSkip="no"), otherwise msiexec errors 2834 ("next pointers
+           do not form a single loop"). -->
+      <Dialog Id="ErrorDlg" Width="270" Height="105" Title="Fel" ErrorDialog="yes">
+        <Control Id="ErrorText" Type="Text" X="48" Y="15" Width="205" Height="60" TabSkip="no" NoPrefix="yes" Text="[ErrorText]" />
+        <Control Id="ErrorCaption" Type="Text" X="48" Y="85" Width="205" Height="15" TabSkip="yes" NoPrefix="yes" Hidden="yes" Text="[ProductName]" />
+        <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" TabSkip="yes" FixedSize="yes" IconSize="32" Text="VpErrorInfoIco" />
+        <Control Id="Y" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Ja">
+          <Publish Event="EndDialog" Value="ErrorYes">1</Publish>
+        </Control>
+        <Control Id="A" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Avbryt">
+          <Publish Event="EndDialog" Value="ErrorAbort">1</Publish>
+        </Control>
+        <Control Id="C" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Avbryt">
+          <Publish Event="EndDialog" Value="ErrorCancel">1</Publish>
+        </Control>
+        <Control Id="I" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Ignorera">
+          <Publish Event="EndDialog" Value="ErrorIgnore">1</Publish>
+        </Control>
+        <Control Id="N" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Nej">
+          <Publish Event="EndDialog" Value="ErrorNo">1</Publish>
+        </Control>
+        <Control Id="O" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="OK">
+          <Publish Event="EndDialog" Value="ErrorOk">1</Publish>
+        </Control>
+        <Control Id="R" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Försök igen">
+          <Publish Event="EndDialog" Value="ErrorRetry">1</Publish>
+        </Control>
+      </Dialog>
+      <Property Id="ErrorDialog" Value="ErrorDlg" />
+
+      <!-- ================= Files in use (standard, Swedish) ================= -->
+      <Dialog Id="FilesInUse" Width="370" Height="270" Title="Program används" KeepModeless="yes">
+        <Control Id="Retry" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="Försök igen">
+          <Publish Event="EndDialog" Value="Retry">1</Publish>
+        </Control>
+        <Control Id="Ignore" Type="PushButton" X="235" Y="243" Width="56" Height="17" Text="Ignorera">
+          <Publish Event="EndDialog" Value="Ignore">1</Publish>
+        </Control>
+        <Control Id="Exit" Type="PushButton" X="166" Y="243" Width="56" Height="17" Text="Avsluta">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Description" Type="Text" X="20" Y="23" Width="280" Height="20" Transparent="yes" NoPrefix="yes" Text="Installationen av Video Piper kräver tillgång till följande program som just nu är öppna." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="20" Height="15" Transparent="yes" NoPrefix="yes" Text="Program används" />
+        <Control Id="List" Type="ListBox" X="20" Y="87" Width="330" Height="130" Property="FileInUseProcess" Sunken="yes" TabSkip="yes" />
+      </Dialog>
+
+      <!-- ================= Exit (success) dialog (standard, Swedish) ================= -->
+      <Dialog Id="ExitDialog" Width="370" Height="270" Title="Installation slutförd">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="Klart" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="Avbryt" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="Tillbaka" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="Tack för att du installerade Video Piper." />
+        <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="Video Piper har installerats på din dator. En genväg finns i Start-menyn." />
+      </Dialog>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+
+      <!-- ================= Fatal error (standard, Swedish) ================= -->
+      <Dialog Id="FatalError" Width="370" Height="270" Title="Okänt fel">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="Klart">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="Avbryt" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="Tillbaka" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="Ett okänt fel inträffade." />
+        <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="80" Transparent="yes" NoPrefix="yes" Text="Installationen avbröts. Du kan installera Video Piper igen senare." />
+      </Dialog>
+
+      <!-- ================= User exit (cancel) dialog (standard, Swedish) ================= -->
+      <Dialog Id="UserExit" Width="370" Height="270" Title="Installationen avbröts">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="Klart">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="Avbryt" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="Tillbaka" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="Video Piper installerades inte." />
+        <Control Id="Description" Type="Text" X="135" Y="80" Width="220" Height="80" Transparent="yes" NoPrefix="yes" Text="Klicka på Klart för att avsluta." />
+      </Dialog>
+
+      <!-- ================= Sequences ================= -->
+      <InstallUISequence>
+        <Show Dialog="WelcomeDlg" After="CostFinalize" />
+        <Show Dialog="InstallDirDlg" After="WelcomeDlg" />
+        <Show Dialog="VerifyReadyDlg" After="InstallDirDlg" />
+        <Show Dialog="ExecuteDlg" Before="ExecuteAction" Overridable="yes" />
+        <Show Dialog="ExitDialog" OnExit="success" Overridable="yes" />
+        <Show Dialog="FatalError" OnExit="error" Overridable="yes" />
+        <Show Dialog="UserExit" OnExit="cancel" Overridable="yes" />
+      </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="ExitDialog" OnExit="success" Overridable="yes" />
+        <Show Dialog="FatalError" OnExit="error" Overridable="yes" />
+        <Show Dialog="UserExit" OnExit="cancel" Overridable="yes" />
+      </AdminUISequence>
+    </UI>
+  </Product>
+</Wix>
+

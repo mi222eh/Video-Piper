@@ -112,6 +112,51 @@ public class YtDlpJsonTests
 
         Assert.IsNull(YtDlpJson.GetDescription(json));
     }
+
+    [TestMethod]
+    public void HasVideoFormat_WithVideoFormats_ReturnsTrue()
+    {
+        var json = """
+        {
+            "id": "track999",
+            "formats": [
+                { "format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2" },
+                { "format_id": "18", "vcodec": "avc1.42001E", "acodec": "none" }
+            ]
+        }
+        """;
+
+        Assert.IsTrue(YtDlpJson.HasVideoFormat(json));
+    }
+
+    [TestMethod]
+    public void HasVideoFormat_AudioOnly_ReturnsFalse()
+    {
+        var json = """
+        {
+            "id": "podcast123",
+            "vcodec": "none",
+            "formats": [
+                { "format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2" }
+            ]
+        }
+        """;
+
+        Assert.IsFalse(YtDlpJson.HasVideoFormat(json));
+    }
+
+    [TestMethod]
+    public void HasVideoFormat_NoFormatsData_ReturnsTrueByDefault()
+    {
+        var json = """
+        {
+            "id": "track999",
+            "title": "Radio Ga Ga"
+        }
+        """;
+
+        Assert.IsTrue(YtDlpJson.HasVideoFormat(json));
+    }
 }
 
 [TestClass]

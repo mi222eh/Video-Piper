@@ -50,6 +50,13 @@ public sealed partial record SearchResult(string Id, string Title, string? Uploa
 
     /// <summary>Video description from the full metadata fetch; empty in flat search results.</summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Whether the video has a real video stream, learned from the full metadata fetch
+    /// (null until then). Audio-only uploads report false, which hides the
+    /// "Ladda ner video" option on the info page.
+    /// </summary>
+    public bool? HasVideo { get; init; }
 }
 
 /// <summary>

@@ -48,7 +48,7 @@ public sealed partial class MainPage : Page
                 new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } // Mode views
             )
             .Children(
-                BuildAppBar(_shell, _simpleVm).Grid(row: 0),
+                BuildAppBar(_shell, _simpleVm, _libraryVm).Grid(row: 0),
                 viewHost.Grid(row: 1)
             );
 
@@ -404,7 +404,7 @@ public sealed partial class MainPage : Page
             );
     }
 
-    private static Grid BuildSearchBoxRow(LibraryViewModel vm)
+    private static UIElement BuildSearchBoxRow(LibraryViewModel vm)
     {
         var searchBox = new TextBox()
             .PlaceholderText("Sök på YouTube...")
@@ -431,7 +431,7 @@ public sealed partial class MainPage : Page
             }
         };
 
-        return new Grid()
+        var searchRow = new Grid()
             .ColumnDefinitions(
                 new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, // Input
                 new ColumnDefinition { Width = GridLength.Auto },                     // Sök / Ladda ner
@@ -497,6 +497,19 @@ public sealed partial class MainPage : Page
                                 new TextBlock().Text("Klistra in").FontSize(12).FontWeight(FontWeights.Medium)
                             )
                     )
+            );
+
+        // While a URL sits in the box but no library folder is chosen, "Ladda ner"
+        // is disabled — explain why instead of leaving a silent dead button.
+        return new StackPanel()
+            .Spacing(4)
+            .Children(
+                searchRow,
+                new TextBlock()
+                    .Text("Välj en biblioteksmapp först för att kunna ladda ner.")
+                    .FontSize(11)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                    .Visibility(x => x.Binding(() => vm.ShowNoRootHint).Convert(show => show ? Visibility.Visible : Visibility.Collapsed))
             );
     }
 
@@ -611,38 +624,10 @@ public sealed partial class MainPage : Page
                             .FontSize(12)
                             .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
                             .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.DetailText) ? Visibility.Visible : Visibility.Collapsed)),
+                        // Download options above the description, so the primary
+                        // actions are visible without scrolling past a long text.
                         new TextBlock()
-                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Description ?? string.Empty))
-                            .FontSize(13)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            .TextWrapping(TextWrapping.Wrap)
-                            .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.Description) ? Visibility.Visible : Visibility.Collapsed)),
-                        new StackPanel()
-                            .Spacing(6)
-                            .HorizontalAlignment(HorizontalAlignment.Left)
-                            .Visibility(x => x.Binding(() => vm.IsSearchingDetail).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
-                            .Children(
-                                new ProgressRing().Width(20).Height(20).IsActive(true),
-                                new TextBlock().Text("Hämtar detaljer...").FontSize(12)
-                            ),
-                        new Border()
-                            .CornerRadius(new CornerRadius(8))
-                            .Padding(new Thickness(12, 6, 12, 6))
-                            .Background(ThemeResource.Get<Brush>("VpErrorBgBrush"))
-                            .BorderBrush(ThemeResource.Get<Brush>("VpErrorBorderBrush"))
-                            .BorderThickness(new Thickness(1))
-                            .Visibility(x => x.Binding(() => vm.SelectedSearchDetailError).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
-                            .Child(
-                                new TextBlock()
-                                    .Text(x => x.Binding(() => vm.SelectedSearchDetailError))
-                                    .FontSize(11)
-                                    .TextWrapping(TextWrapping.Wrap)
-                            ),
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r =>
-                                r is null ? string.Empty
-                                : vm.Items.Any(i => i.Id == r.Id) ? "Den här videon finns redan i biblioteket."
-                                : "Välj format för nedladdningen — den sparas i ditt bibliotek."))
+                            .Text(x => x.Binding(() => vm.SearchDetailHint))
                             .FontSize(12)
                             .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
                         new Grid()
@@ -669,11 +654,16 @@ public sealed partial class MainPage : Page
                                     ),
                                 // Neutral (not accent): only one primary action per view —
                                 // audio is the app's default format, so it keeps the accent.
+                                // Hidden for audio-only uploads (HasVideo == false); while
+                                // the detail fetch is pending (HasVideo == null) it stays
+                                // visible so a normal video is never blocked.
                                 new Button()
                                     .Grid(column: 1)
                                     .Padding(new Thickness(14, 9, 14, 9))
                                     .CornerRadius(new CornerRadius(8))
                                     .Command(x => x.Binding(() => vm.DownloadSearchResultVideoCommand))
+                                    .Visibility(x => x.Binding(() => vm.SelectedSearchResult)
+                                        .Convert(r => (r?.HasVideo ?? true) ? Visibility.Visible : Visibility.Collapsed))
                                     .Content(
                                         new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
                                             .Children(
@@ -681,7 +671,35 @@ public sealed partial class MainPage : Page
                                                 new TextBlock().Text("Ladda ner video").FontSize(13).FontWeight(FontWeights.SemiBold)
                                             )
                                     )
-                            )
+                            ),
+                        new StackPanel()
+                            .Spacing(6)
+                            .HorizontalAlignment(HorizontalAlignment.Left)
+                            .Visibility(x => x.Binding(() => vm.IsSearchingDetail).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+                            .Children(
+                                new ProgressRing().Width(20).Height(20).IsActive(true),
+                                new TextBlock().Text("Hämtar detaljer...").FontSize(12)
+                            ),
+                        new Border()
+                            .CornerRadius(new CornerRadius(8))
+                            .Padding(new Thickness(12, 6, 12, 6))
+                            .Background(ThemeResource.Get<Brush>("VpErrorBgBrush"))
+                            .BorderBrush(ThemeResource.Get<Brush>("VpErrorBorderBrush"))
+                            .BorderThickness(new Thickness(1))
+                            .Visibility(x => x.Binding(() => vm.SelectedSearchDetailError).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
+                            .Child(
+                                new TextBlock()
+                                    .Text(x => x.Binding(() => vm.SelectedSearchDetailError))
+                                    .FontSize(11)
+                                    .TextWrapping(TextWrapping.Wrap)
+                            ),
+                        // Description last: the long, scrollable content.
+                        new TextBlock()
+                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Description ?? string.Empty))
+                            .FontSize(13)
+                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                            .TextWrapping(TextWrapping.Wrap)
+                            .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.Description) ? Visibility.Visible : Visibility.Collapsed))
                     )
                     )
             );
@@ -804,7 +822,7 @@ public sealed partial class MainPage : Page
             .VerticalAlignment(VerticalAlignment.Center)
             .HorizontalAlignment(HorizontalAlignment.Center)
             .Spacing(12)
-            .Visibility(x => x.Binding(() => vm.HasFilteredItems).Convert(has => has ? Visibility.Collapsed : Visibility.Visible))
+            .Visibility(x => x.Binding(() => vm.ShowCollectionEmptyState).Convert(show => show ? Visibility.Visible : Visibility.Collapsed))
             .Children(
                 new FontIcon().Glyph(x => x.Binding(() => vm.ActiveSection).Convert(sec => sec == LibrarySidebarSection.FailedOnly ? "\uE783" : "\uE8B7")).FontSize(44).Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
                 new TextBlock().Text(x => x.Binding(() => vm.EmptyStateTitle)).FontSize(16).FontWeight(FontWeights.SemiBold).HorizontalAlignment(HorizontalAlignment.Center),
@@ -814,9 +832,38 @@ public sealed partial class MainPage : Page
                 emptyRetryCta
             );
 
+        // First-launch state: no library folder chosen yet — ask the user to pick one.
+        // This is the view's single accent action until a folder exists.
+        var noRootCard = new StackPanel()
+            .VerticalAlignment(VerticalAlignment.Center)
+            .HorizontalAlignment(HorizontalAlignment.Center)
+            .Spacing(12)
+            .Visibility(x => x.Binding(() => vm.IsRootSet).Convert(set => set ? Visibility.Collapsed : Visibility.Visible))
+            .Children(
+                new FontIcon().Glyph("\uED25").FontSize(44).Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
+                new TextBlock().Text("Välj var ditt bibliotek ska sparas").FontSize(16).FontWeight(FontWeights.SemiBold).HorizontalAlignment(HorizontalAlignment.Center),
+                new TextBlock().Text("Dina nedladdningar lagras i den mapp du väljer. Du kan ändra mappen när som helst under Biblioteksmapp i sidopanelen.")
+                    .FontSize(12)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
+                new Button()
+                    .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+                    .Padding(new Thickness(14, 8, 14, 8))
+                    .CornerRadius(new CornerRadius(6))
+                    .HorizontalAlignment(HorizontalAlignment.Center)
+                    .Command(x => x.Binding(() => vm.BrowseCommand))
+                    .Content(
+                        new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                            .Children(
+                                new FontIcon().Glyph("\uED25").FontSize(13),
+                                new TextBlock().Text("Välj mapp").FontSize(12).FontWeight(FontWeights.SemiBold)
+                            )
+                    )
+            );
+
         return new Grid()
             .Visibility(x => x.Binding(() => vm.IsCollectionActive).Convert(a => a ? Visibility.Visible : Visibility.Collapsed))
             .Children(
+                noRootCard,
                 emptyCollection,
                 libraryList
             );
@@ -1018,7 +1065,9 @@ public sealed partial class MainPage : Page
             .BorderBrush(ThemeResource.Get<Brush>("CardStrokeColorDefaultBrush"))
             .BorderThickness(new Thickness(1))
             .Padding(new Thickness(12, 10, 12, 10))
-            .Visibility(x => x.Binding(() => vm.HasQueueEntries)
+            // Hidden by default: the app bar queue icon toggles the panel (vm.QueuePanelOpen;
+            // the VM auto-closes it when every job has finished).
+            .Visibility(x => x.Binding(() => vm.QueuePanelOpen)
                 .Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
             .Child(
                 new Grid()
@@ -1083,6 +1132,13 @@ public sealed partial class MainPage : Page
     /// </summary>
     private static Border BuildQueueLogPanel(LibraryViewModel vm)
     {
+        // The log text is driven from code (not a binding): a binding to the
+        // SelectedQueueEntry object never re-evaluates when the entry appends lines,
+        // so the text used to sit frozen after a row was clicked.
+        var logText = new TextBlock()
+            .TextWrapping(TextWrapping.Wrap)
+            .FontSize(11);
+
         var logViewer = new ScrollViewer()
             .MaxHeight(170)
             .VerticalScrollBarVisibility(ScrollBarVisibility.Auto)
@@ -1090,20 +1146,50 @@ public sealed partial class MainPage : Page
             .Padding(new Thickness(10, 8, 10, 8))
             .CornerRadius(new CornerRadius(8))
             .Background(ThemeResource.Get<Brush>("CardBackgroundFillColorSecondaryBrush"))
-            .Content(
-                new TextBlock()
-                    .TextWrapping(TextWrapping.Wrap)
-                    .Text(x => x.Binding(() => vm.SelectedQueueEntry)
-                        .Convert(e => e?.JoinedLogs ?? string.Empty))
-            );
+            .Content(logText);
 
-        // Auto-scroll to the newest line while the selected item's log grows.
+        var noLogsPlaceholder = new TextBlock()
+            .Text("Inga loggar ännu.")
+            .FontSize(11)
+            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+            .Visibility(Visibility.Collapsed); // driven in code
+
+        var retryButton = new Button()
+            .Content("Försök igen")
+            .FontSize(11)
+            .Padding(new Thickness(12, 4, 12, 4))
+            .CornerRadius(new CornerRadius(6))
+            .Visibility(Visibility.Collapsed) // driven in code
+            .HorizontalAlignment(HorizontalAlignment.Left);
+        retryButton.Click += (_, _) => vm.RetryQueueEntryCommand.Execute(vm.SelectedQueueEntry);
+
+        // Keeps the log text, the placeholder and the retry button in sync with the
+        // tracked entry, and follows the newest line — but only while the user is
+        // already at the bottom, so reading older lines isn't yanked away.
         LibraryQueueEntry? tracked = null;
-        void EntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        void SyncFromTracked(bool forceScroll)
         {
-            if (e.PropertyName is nameof(LibraryQueueEntry.JoinedLogs) or nameof(LibraryQueueEntry.HasLogs))
+            logText.Text = tracked?.JoinedLogs ?? string.Empty;
+            noLogsPlaceholder.Visibility = tracked is null || !tracked.HasLogs
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            retryButton.Visibility = tracked is { IsFailed: true }
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            var nearBottom = logViewer.VerticalOffset + logViewer.ViewportHeight >= logViewer.ScrollableHeight - 64;
+            if (forceScroll || nearBottom)
             {
                 logViewer.ScrollToVerticalOffset(double.PositiveInfinity);
+            }
+        }
+        void EntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(LibraryQueueEntry.JoinedLogs)
+                or nameof(LibraryQueueEntry.HasLogs)
+                or nameof(LibraryQueueEntry.IsFailed))
+            {
+                SyncFromTracked(false);
             }
         }
         vm.PropertyChanged += (_, e) =>
@@ -1120,19 +1206,9 @@ public sealed partial class MainPage : Page
             if (tracked is not null)
             {
                 tracked.PropertyChanged += EntryPropertyChanged;
-                logViewer.ScrollToVerticalOffset(double.PositiveInfinity);
             }
+            SyncFromTracked(true);
         };
-
-        var retryButton = new Button()
-            .Content("Försök igen")
-            .FontSize(11)
-            .Padding(new Thickness(12, 4, 12, 4))
-            .CornerRadius(new CornerRadius(6))
-            .Visibility(x => x.Binding(() => vm.SelectedQueueEntry)
-                .Convert(e => e?.IsFailed == true ? Visibility.Visible : Visibility.Collapsed))
-            .HorizontalAlignment(HorizontalAlignment.Left);
-        retryButton.Click += (_, _) => vm.RetryQueueEntryCommand.Execute(vm.SelectedQueueEntry);
 
         return new Border()
             .Padding(new Thickness(10, 8, 10, 8))
@@ -1161,12 +1237,7 @@ public sealed partial class MainPage : Page
                                         .Content(new TextBlock().Text("Dölj").FontSize(10)),
                                     "Dölj loggen")
                             ),
-                        new TextBlock()
-                            .Text("Inga loggar ännu.")
-                            .FontSize(11)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            .Visibility(x => x.Binding(() => vm.SelectedQueueEntry)
-                                .Convert(e => e is null or { HasLogs: false } ? Visibility.Visible : Visibility.Collapsed)),
+                        noLogsPlaceholder,
                         retryButton,
                         logViewer
                     )
@@ -1463,7 +1534,7 @@ public sealed partial class MainPage : Page
     /// <summary>
     /// App-wide top bar: logo, mode switcher (Snabbnedladdning/Bibliotek), tool status pill, theme toggle.
     /// </summary>
-    private static Grid BuildAppBar(ShellViewModel shell, MainViewModel simpleVm)
+    private static Grid BuildAppBar(ShellViewModel shell, MainViewModel simpleVm, LibraryViewModel libraryVm)
     {
         // Bind the shared tool status: ready = green version pill; missing = warning pill (simple-mode VM owns install).
         simpleVm.PropertyChanged += (s, e) =>
@@ -1476,6 +1547,28 @@ public sealed partial class MainPage : Page
             }
         };
         shell.ToolStatus = !simpleVm.ToolsReady ? "Hämtar verktyg..." : simpleVm.YtDlpVersion;
+
+        // The queue icon mirrors the library VM's queue state (the app bar binds to ShellViewModel).
+        void SyncQueueIcon()
+        {
+            shell.QueueState = new QueueState(libraryVm.HasQueueEntries && shell.IsLibrary, libraryVm.QueuePanelOpen, libraryVm.ActiveQueueCount);
+        }
+
+        libraryVm.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName is nameof(LibraryViewModel.HasQueueEntries) or nameof(LibraryViewModel.QueuePanelOpen) or nameof(LibraryViewModel.ActiveQueueCount))
+            {
+                SyncQueueIcon();
+            }
+        };
+        shell.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName is nameof(ShellViewModel.IsLibrary))
+            {
+                SyncQueueIcon();
+            }
+        };
+        SyncQueueIcon();
 
         // Mode switcher: two-segment pill, active segment highlighted.
         var modePanel = new StackPanel()
@@ -1532,6 +1625,7 @@ public sealed partial class MainPage : Page
                 new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                 new ColumnDefinition { Width = GridLength.Auto }, // Mode switcher
                 new ColumnDefinition { Width = GridLength.Auto }, // Tool status pill
+                new ColumnDefinition { Width = GridLength.Auto }, // Queue (library mode)
                 new ColumnDefinition { Width = GridLength.Auto }, // Settings (gear)
                 new ColumnDefinition { Width = GridLength.Auto }  // Theme toggle
             )
@@ -1602,10 +1696,57 @@ public sealed partial class MainPage : Page
                             )
                     ),
 
-                // Settings (gear) button — opens the Inställningar page.
+                // Queue icon (library mode) — toggles the Laddningskön panel. Hidden until the
+                // queue has entries; the badge shows how many jobs are still in flight.
+                // NOTE: the command is assigned DIRECTLY (no x.Binding): the app bar Grid's
+                // DataContext is the ShellViewModel, and markup bindings resolve their path
+                // against it — a binding to the LibraryViewModel command silently produced a
+                // null Command (the button looked enabled but did nothing). The command object
+                // is stable (built once in the VM constructor), so a direct reference is safe
+                // — the same pattern the mode-switcher buttons use.
                 WithTip(
                     new Button()
                         .Grid(column: 4)
+                        .VerticalAlignment(VerticalAlignment.Center)
+                        .Padding(new Thickness(10, 8, 10, 8))
+                        .CornerRadius(new CornerRadius(8))
+                        .Command(libraryVm.ToggleQueuePanelCommand)
+                        .Background(x => x.Binding(() => shell.QueueState).Convert(s => s.Open
+                            ? BrushFromResource("SubtleFillColorSecondaryBrush", new SolidColorBrush(Colors.Transparent))
+                            : new SolidColorBrush(Colors.Transparent)))
+                        .Visibility(x => x.Binding(() => shell.QueueState).Convert(s => s.Visible ? Visibility.Visible : Visibility.Collapsed))
+                        .Content(
+                            new Grid().Children(
+                                new FontIcon()
+                                    .Glyph("\uE9D2")
+                                    .FontSize(15)
+                                    .HorizontalAlignment(HorizontalAlignment.Center)
+                                    .VerticalAlignment(VerticalAlignment.Center),
+                                new Border()
+                                    .CornerRadius(new CornerRadius(8))
+                                    .Padding(new Thickness(5, 1, 5, 1))
+                                    .MinWidth(16)
+                                    .HorizontalAlignment(HorizontalAlignment.Left)
+                                    .VerticalAlignment(VerticalAlignment.Top)
+                                    .Margin(new Thickness(0, 0, 0, 0))
+                                    .Background(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
+                                    .Visibility(x => x.Binding(() => shell.QueueState).Convert(s => s.Count > 0 ? Visibility.Visible : Visibility.Collapsed))
+                                    .Child(
+                                        new TextBlock()
+                                            .Text(x => x.Binding(() => shell.QueueState).Convert(s => s.Count.ToString()))
+                                            .FontSize(10)
+                                            .FontWeight(FontWeights.SemiBold)
+                                            .Foreground(new SolidColorBrush(Colors.White))
+                                            .HorizontalAlignment(HorizontalAlignment.Center)
+                                    )
+                            )
+                        ),
+                    "Laddningskön"),
+
+                // Settings (gear) button — opens the Inställningar page.
+                WithTip(
+                    new Button()
+                        .Grid(column: 5)
                         .VerticalAlignment(VerticalAlignment.Center)
                         .Padding(new Thickness(10, 8, 10, 8))
                         .CornerRadius(new CornerRadius(8))
@@ -1624,7 +1765,7 @@ public sealed partial class MainPage : Page
                 // FontIcon language as the rest of the app (moon = dark, sun = light).
                 WithTip(
                     new Button()
-                        .Grid(column: 5)
+                        .Grid(column: 6)
                         .VerticalAlignment(VerticalAlignment.Center)
                         .Padding(new Thickness(10, 8, 10, 8))
                         .CornerRadius(new CornerRadius(8))
@@ -1754,32 +1895,39 @@ public sealed partial class MainPage : Page
                                     .Text(x => x.Binding(() => tool.InstalledText))
                                     .FontSize(12)
                                     .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
+                                // State-colored status line: errors red, an available update
+                                // amber, everything else neutral secondary.
                                 new TextBlock()
                                     .Text(x => x.Binding(() => tool.StatusText))
                                     .FontSize(12)
                                     .TextWrapping(TextWrapping.Wrap)
-                                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                                    .Visibility(x => x.Binding(() => tool.StatusText).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible)),
-                                new ProgressBar()
-                                    .Height(3)
-                                    .CornerRadius(new CornerRadius(2))
-                                    .Maximum(100)
-                                    .IsIndeterminate(true)
-                                    .Visibility(x => x.Binding(() => tool.BusyChecking).Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
+                                    .Foreground(x => x.Binding(() => tool.StatusText).Convert(s =>
+                                        string.IsNullOrEmpty(s)
+                                            ? BrushFromResource("TextFillColorSecondaryBrush", new SolidColorBrush(Colors.Gray))
+                                            : s.Contains("misslyckades")
+                                                ? BrushFromResource("VpErrorBrush", new SolidColorBrush(Colors.OrangeRed))
+                                                : s.StartsWith("Ny version tillgänglig", StringComparison.Ordinal)
+                                                    ? BrushFromResource("VpWarningBrush", new SolidColorBrush(Colors.Gold))
+                                                    : BrushFromResource("TextFillColorSecondaryBrush", new SolidColorBrush(Colors.Gray))))
+                                    .Visibility(x => x.Binding(() => tool.StatusText).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
                             ),
                         new StackPanel()
                             .Grid(column: 2)
                             .VerticalAlignment(VerticalAlignment.Center)
                             .Spacing(6)
                             .Children(
+                                // Contextual action: only shown when there is something to
+                                // update/fetch — a disabled "Senaste" status button was
+                                // replaced by the state-colored status line above.
                                 new Button()
                                     .Padding(new Thickness(10, 4, 10, 4))
                                     .CornerRadius(new CornerRadius(6))
+                                    .Visibility(x => x.Binding(() => tool.HasUpdate).Convert(b => b ? Visibility.Visible : Visibility.Collapsed))
                                     .Command(x => x.Binding(() => tool.UpdateCommand))
                                     .IsEnabled(x => x.Binding(() => tool.CanUpdate))
                                     .Content(
                                         new TextBlock()
-                                            .Text(x => x.Binding(() => tool.HasUpdate).Convert(b => b ? "Uppdatera" : "Senaste"))
+                                            .Text(x => x.Binding(() => tool.InstalledVersion).Convert(v => v is null ? "Hämta" : "Uppdatera"))
                                             .FontSize(13)
                                             .FontWeight(FontWeights.SemiBold)
                                     ),
@@ -1808,6 +1956,27 @@ public sealed partial class MainPage : Page
             );
     }
 
+    /// <summary>One settings row: label on the left, control right-aligned — the standard
+    /// app-settings layout at full card width (the old narrow right column clipped controls).</summary>
+    private static Grid BuildSettingRow(string label, FrameworkElement control)
+    {
+        return new Grid()
+            .ColumnDefinitions(
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            )
+            .ColumnSpacing(12)
+            .Children(
+                new TextBlock()
+                    .Text(label)
+                    .FontSize(13)
+                    .VerticalAlignment(VerticalAlignment.Center),
+                control
+                    .HorizontalAlignment(HorizontalAlignment.Right)
+                    .VerticalAlignment(VerticalAlignment.Center)
+            );
+    }
+
     /// <summary>Library settings card: delete-mode toggle plus video resolution/framerate.</summary>
     private static Border BuildLibrarySettingsCard(SettingsViewModel vm)
     {
@@ -1818,11 +1987,13 @@ public sealed partial class MainPage : Page
 
         var resolutionCombo = new ComboBox()
             .ItemsSource(SettingsViewModel.ResolutionLabels)
-            .SelectedIndex(x => x.Binding(() => vm.ResolutionIndex).TwoWay());
+            .SelectedIndex(x => x.Binding(() => vm.ResolutionIndex).TwoWay())
+            .Width(140);
 
         var framerateCombo = new ComboBox()
             .ItemsSource(SettingsViewModel.FramerateLabels)
-            .SelectedIndex(x => x.Binding(() => vm.FramerateIndex).TwoWay());
+            .SelectedIndex(x => x.Binding(() => vm.FramerateIndex).TwoWay())
+            .Width(140);
 
         return new Border()
             .DataContext(vm)
@@ -1832,73 +2003,46 @@ public sealed partial class MainPage : Page
             .BorderBrush(ThemeResource.Get<Brush>("CardStrokeColorDefaultBrush"))
             .BorderThickness(new Thickness(1))
             .Child(
-                new Grid()
-                    .ColumnDefinitions(
-                        new ColumnDefinition { Width = GridLength.Auto },
-                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
-                        new ColumnDefinition { Width = GridLength.Auto }
-                    )
-                    .ColumnSpacing(12)
+                new StackPanel()
+                    .Spacing(10)
                     .Children(
-                        new Border()
-                            .Grid(column: 0)
-                            .Width(36)
-                            .Height(36)
-                            .CornerRadius(new CornerRadius(8))
-                            .Background(ThemeResource.Get<Brush>("LayerFillColorDefaultBrush"))
-                            .BorderBrush(ThemeResource.Get<Brush>("CardStrokeColorDefaultBrush"))
-                            .BorderThickness(new Thickness(1))
-                            .Child(
-                                new FontIcon()
-                                    .Glyph("\uE8B7")
-                                    .FontSize(15)
-                                    .Foreground(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
-                                    .HorizontalAlignment(HorizontalAlignment.Center)
-                                    .VerticalAlignment(VerticalAlignment.Center)
-                            ),
-                        new StackPanel()
-                            .Grid(column: 1)
-                            .Spacing(3)
-                            .Children(
-                                new TextBlock().Text("Bibliotek").FontSize(14).FontWeight(FontWeights.SemiBold),
-                                new TextBlock().Text("Video-kvalitet (max höjd) och minsta bildfrekvens för nya nedladdningar.").FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            ),
-                        new StackPanel()
-                            .Grid(column: 2)
-                            .VerticalAlignment(VerticalAlignment.Center)
-                            .Spacing(8)
-                            .Children(
-                                new Grid()
-                                    .ColumnDefinitions(
-                                        new ColumnDefinition { Width = new GridLength(110) },
-                                        new ColumnDefinition { Width = GridLength.Auto }
-                                    )
-                                    .ColumnSpacing(8)
-                                    .Children(
-                                        new TextBlock().Text("Filer vid borttagning").FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).VerticalAlignment(VerticalAlignment.Center).TextWrapping(TextWrapping.Wrap),
-                                        deleteToggle
-                                    ),
-                                new Grid()
-                                    .ColumnDefinitions(
-                                        new ColumnDefinition { Width = new GridLength(110) },
-                                        new ColumnDefinition { Width = GridLength.Auto }
-                                    )
-                                    .ColumnSpacing(8)
-                                    .Children(
-                                        new TextBlock().Text("Upplösning").FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).VerticalAlignment(VerticalAlignment.Center),
-                                        resolutionCombo
-                                    ),
-                                new Grid()
-                                    .ColumnDefinitions(
-                                        new ColumnDefinition { Width = new GridLength(110) },
-                                        new ColumnDefinition { Width = GridLength.Auto }
-                                    )
-                                    .ColumnSpacing(8)
-                                    .Children(
-                                        new TextBlock().Text("Bildfrekvens").FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).VerticalAlignment(VerticalAlignment.Center),
-                                        framerateCombo
-                                    )
+                        new Grid()
+                            .ColumnDefinitions(
+                                new ColumnDefinition { Width = GridLength.Auto },
+                                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
                             )
+                            .ColumnSpacing(12)
+                            .Children(
+                                new Border()
+                                    .Grid(column: 0)
+                                    .Width(36)
+                                    .Height(36)
+                                    .CornerRadius(new CornerRadius(8))
+                                    .Background(ThemeResource.Get<Brush>("LayerFillColorDefaultBrush"))
+                                    .BorderBrush(ThemeResource.Get<Brush>("CardStrokeColorDefaultBrush"))
+                                    .BorderThickness(new Thickness(1))
+                                    .Child(
+                                        new FontIcon()
+                                            .Glyph("\uE8B7")
+                                            .FontSize(15)
+                                            .Foreground(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
+                                            .HorizontalAlignment(HorizontalAlignment.Center)
+                                            .VerticalAlignment(VerticalAlignment.Center)
+                                    ),
+                                new StackPanel()
+                                    .Grid(column: 1)
+                                    .Spacing(3)
+                                    .Children(
+                                        new TextBlock().Text("Bibliotek").FontSize(14).FontWeight(FontWeights.SemiBold),
+                                        new TextBlock().Text("Video-kvalitet och bildfrekvens för nya nedladdningar, samt vad som händer med filer när du tar bort en post.")
+                                            .FontSize(12)
+                                            .TextWrapping(TextWrapping.Wrap)
+                                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                                    )
+                            ),
+                        BuildSettingRow("Filer vid borttagning", deleteToggle),
+                        BuildSettingRow("Upplösning", resolutionCombo),
+                        BuildSettingRow("Bildfrekvens", framerateCombo)
                     )
             );
     }

@@ -53,6 +53,34 @@ internal static class YtDlpJson
         return GetString(doc.RootElement, "description");
     }
 
+    /// <summary>
+    /// True when a single-video -J document contains at least one real video stream
+    /// (a format whose vcodec is set). Audio-only uploads (podcasts, audio-only
+    /// videos) carry "none" for every format. Returns true when no format data is
+    /// available, so the video option is never hidden by accident.
+    /// </summary>
+    public static bool HasVideoFormat(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var format in formats.EnumerateArray())
+            {
+                var vcodec = GetString(format, "vcodec");
+                if (!string.IsNullOrEmpty(vcodec) && !vcodec.Equals("none", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        var topVcodec = GetString(root, "vcodec");
+        return topVcodec is null || !topVcodec.Equals("none", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static MediaEntry? ParseEntry(JsonElement entry)
     {
         var id = GetString(entry, "id");

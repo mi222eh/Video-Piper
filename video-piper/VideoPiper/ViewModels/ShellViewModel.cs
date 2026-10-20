@@ -11,6 +11,9 @@ public enum ShellMode
     Library,
 }
 
+/// <summary>App bar queue icon state (record equality suppresses redundant property raises).</summary>
+public sealed record QueueState(bool Visible, bool Open, int Count);
+
 /// <summary>
 /// View model for the app-wide top bar: mode switcher (Snabbnedladdning/Bibliotek),
 /// tool status and theme. Owns the navigation state shared by both feature view models.
@@ -21,6 +24,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private bool _isDark = true;
     private bool _settingsOpen;
     private string? _toolStatus;
+    private QueueState _queueState = new(false, false, 0);
 
     public ICommand ToggleModeCommand { get; }
     public ICommand ToggleThemeCommand { get; }
@@ -70,6 +74,18 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     {
         get => _toolStatus;
         set => Set(ref _toolStatus, value);
+    }
+
+    /// <summary>
+    /// Snapshot of the library queue for the app bar icon: whether the icon shows
+    /// (library mode + queue entries exist), whether the queue panel is open, and how
+    /// many jobs are active (queued or downloading). Mirrored from LibraryViewModel by
+    /// MainPage (the app bar binds to ShellViewModel, not the feature VMs).
+    /// </summary>
+    public QueueState QueueState
+    {
+        get => _queueState;
+        set => Set(ref _queueState, value);
     }
 
     public bool IsDark

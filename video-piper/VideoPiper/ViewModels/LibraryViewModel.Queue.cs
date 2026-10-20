@@ -41,6 +41,9 @@ public sealed partial class LibraryViewModel
     private CancellationTokenSource? _queueCts;
     private bool _queueRunning;
 
+    /// <summary>1 while a log-flush OnUi is already queued (coalesces bursts of log lines).</summary>
+    private int _logFlushPending;
+
     private readonly RelayCommand _browseCommand;
     private readonly RelayCommand _downloadCommand;
     private readonly RelayCommand _stopDownloadCommand;
@@ -64,6 +67,9 @@ public sealed partial class LibraryViewModel
     private readonly RelayCommand _clearFinishedQueueEntriesCommand;
     private readonly ParameterizedRelayCommand _selectQueueEntryCommand;
     private readonly ParameterizedRelayCommand _retryQueueEntryCommand;
+    private readonly RelayCommand _toggleQueuePanelCommand;
+
+    private bool _queuePanelOpen;
 
     private readonly ILibraryDownloadService _libraryDownloadService;
     private readonly ISearchService _searchService;
@@ -91,6 +97,7 @@ public sealed partial class LibraryViewModel
     public ICommand ClearFinishedQueueEntriesCommand => _clearFinishedQueueEntriesCommand;
     public ICommand SelectQueueEntryCommand => _selectQueueEntryCommand;
     public ICommand RetryQueueEntryCommand => _retryQueueEntryCommand;
+    public ICommand ToggleQueuePanelCommand => _toggleQueuePanelCommand;
 
     public LibraryViewModel(ILibraryDownloadService libraryDownloadService, ISearchService searchService)
     {
@@ -105,7 +112,7 @@ public sealed partial class LibraryViewModel
         _deselectCommand = new RelayCommand(() => { SelectedItem = null; return Task.CompletedTask; });
         _openFolderSelectedCommand = new RelayCommand(OpenFolderSelectedAsync, () => SelectedItem is not null);
         _openRootFolderCommand = new RelayCommand(OpenRootFolder);
-        _resyncCommand = new RelayCommand(ResyncAsync, () => !IsDownloading);
+        _resyncCommand = new RelayCommand(ResyncAsync, () => IsRootSet && !IsDownloading);
 
         _playItemCommand = new ParameterizedRelayCommand(p => PlayItemAsync(p as LibraryItem));
 
@@ -144,6 +151,11 @@ public sealed partial class LibraryViewModel
         _retryFailedCommand = new RelayCommand(RetryFailedAsync, () => !IsBusy && FailedCount > 0);
         _clearQueueCommand = new RelayCommand(ClearQueueAsync, () => QueueCount > 0 && !IsDownloading);
         _clearFinishedQueueEntriesCommand = new RelayCommand(ClearFinishedQueueEntriesAsync, () => QueueEntries.Count > 0);
+        _toggleQueuePanelCommand = new RelayCommand(() =>
+        {
+            QueuePanelOpen = !QueuePanelOpen;
+            return Task.CompletedTask;
+        });
         _selectQueueEntryCommand = new ParameterizedRelayCommand(p =>
         {
             if (p is LibraryQueueEntry entry)
@@ -334,32 +346,53 @@ public sealed partial class LibraryViewModel
     /// <summary>True while the queue panel has anything to show (jobs queued, active, or finished).</summary>
     public bool HasQueueEntries => QueueEntries.Count > 0;
 
+    /// <summary>
+    /// Whether the queue panel (Laddningskön card) is shown. Hidden by default — the app bar
+    /// queue icon toggles it. It auto-closes when every job has finished, unless the user is
+    /// reading a row's log (SelectedQueueEntry is set); the compact progress card covers the
+    /// active-download feedback while the panel is closed.
+    /// </summary>
+    public bool QueuePanelOpen
+    {
+        get => _queuePanelOpen;
+        set => Set(ref _queuePanelOpen, value);
+    }
+
+    /// <summary>Number of queue entries still in flight (queued or downloading) — the app bar badge.</summary>
+    public int ActiveQueueCount => QueueEntries.Count(e => e.Status is ItemStatus.Queued or ItemStatus.Downloading);
+
+    /// <summary>
+    /// Re-raises the app bar badge count and applies the panel's auto-close rule. Call on the UI
+    /// thread after any change to queue entry status or membership (enqueue, job start/finish,
+    /// cancel, clears).
+    /// </summary>
+    private void RefreshQueuePanelState()
+    {
+        if (QueueEntries.Count == 0)
+        {
+            QueuePanelOpen = false;
+        }
+        else if (SelectedQueueEntry is null
+                 && QueueEntries.All(e => e.Status is ItemStatus.Complete or ItemStatus.Failed))
+        {
+            // Everything is done and the user isn't reading a log — tuck the panel away.
+            QueuePanelOpen = false;
+        }
+
+        OnPropertyChanged(nameof(ActiveQueueCount));
+    }
+
     public async Task InitializeAsync()
     {
         Kind = PreferencesService.GetFormat();
         var root = PreferencesService.GetLibraryRoot();
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
-            var myMusic = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-            if (!string.IsNullOrWhiteSpace(myMusic) && Directory.Exists(myMusic))
-            {
-                root = Path.Combine(myMusic, "VideoPiper");
-            }
-            else
-            {
-                var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                root = Path.Combine(userProfile, "Music", "VideoPiper");
-            }
-        }
-
-        try
-        {
-            Directory.CreateDirectory(root);
-            PreferencesService.SetLibraryRoot(root);
-        }
-        catch (Exception)
-        {
-            // Best effort
+            // First launch (or the saved folder is gone): never silently pick or
+            // create a location. Keep the root unset — the library view shows a
+            // "choose a folder" state and downloads stay disabled until the user
+            // picks one (BrowseAsync persists the choice).
+            return;
         }
 
         await OpenStoreAsync(root);
@@ -390,6 +423,12 @@ public sealed partial class LibraryViewModel
         var targetUrl = !string.IsNullOrWhiteSpace(Url) ? Url.Trim() : SearchQuery.Trim();
         if (string.IsNullOrWhiteSpace(targetUrl))
         {
+            return;
+        }
+
+        if (!IsRootSet)
+        {
+            Error = "Välj en biblioteksmapp först — nedladdningar sparas i den mapp du väljer.";
             return;
         }
 
@@ -458,6 +497,7 @@ public sealed partial class LibraryViewModel
                     existing.Percent = 0;
                     existing.ClearLogs();
                     existing.AppendLog("Överför till kön igen.");
+                    existing.FlushLog();
                     continue;
                 }
 
@@ -475,6 +515,13 @@ public sealed partial class LibraryViewModel
                 QueueEntries.Insert(0, newEntries[i]);
             }
             OnPropertyChanged(nameof(HasQueueEntries));
+            // The queue-count-gated buttons stay disabled otherwise (CanExecute is
+            // only re-raised on an explicit refresh).
+            _clearQueueCommand.RefreshCanExecute();
+            _clearFinishedQueueEntriesCommand.RefreshCanExecute();
+            // The panel stays where the user left it — the progress card already
+            // surfaces the active download (the app bar badge shows the job count).
+            RefreshQueuePanelState();
         });
 
         EnsureWorkerStarted();
@@ -561,14 +608,37 @@ public sealed partial class LibraryViewModel
                         {
                             UpsertItem(item);
                             JobTitle = item.Title;
-                            JobPercent = item.Percent ?? 0;
-                            if (queueEntry is not null)
+                            // Pass the exact value through: the queue row, the item row and the
+                            // progress card all format with "{0}%", which rounds — feeding them
+                            // pre-truncated ints made the queue row lag the main window by 1%.
+                            var percent = item.Percent ?? 0;
+                            JobPercent = percent;
+                            if (queueEntry is not null && queueEntry.Percent != percent)
                             {
-                                queueEntry.Percent = item.Percent ?? 0;
+                                queueEntry.Percent = percent;
                             }
                         }),
                         _queueCts!.Token,
-                        onLine: line => OnUi(() => queueEntry?.AppendLog(line)));
+                        onLine: line =>
+                        {
+                            if (queueEntry is null)
+                            {
+                                return;
+                            }
+                            // Buffer only (no notification per line) — coalesce to at most one
+                            // UI flush per queued frame so the log panel updates live without
+                            // a layout pass per line.
+                            queueEntry.AppendLog(line);
+                            if (System.Threading.Interlocked.Exchange(ref _logFlushPending, 1) == 0)
+                            {
+                                var entry = queueEntry;
+                                OnUi(() =>
+                                {
+                                    System.Threading.Interlocked.Exchange(ref _logFlushPending, 0);
+                                    entry.FlushLog();
+                                });
+                            }
+                        });
 
                     // DownloadEntryAsync marks the library item failed (but returns) on individual errors.
                     OnUi(() =>
@@ -584,6 +654,7 @@ public sealed partial class LibraryViewModel
                             {
                                 queueEntry.AppendLog("Klart. Filen är sparad i biblioteket.");
                             }
+                            queueEntry.FlushLog();
                         }
                         // UpsertItem alone misses the final state when the item was
                         // registered as Queued and only progress was reported since —
@@ -594,6 +665,7 @@ public sealed partial class LibraryViewModel
                             UpsertItem(result);
                         }
                         SyncSelectedSearchResultInLibrary(result.Id, result.Status);
+                        RefreshQueuePanelState();
                     });
                 }
                 catch (OperationCanceledException)
@@ -605,6 +677,7 @@ public sealed partial class LibraryViewModel
                         {
                             queueEntry.Status = ItemStatus.Failed;
                             queueEntry.AppendLog("Avbröts av användaren.");
+                            queueEntry.FlushLog();
                         }
                         while (_downloadQueue.TryDequeue(out var remaining))
                         {
@@ -615,10 +688,12 @@ public sealed partial class LibraryViewModel
                                 {
                                     remainingEntry.Status = ItemStatus.Failed;
                                     remainingEntry.AppendLog("Avbröts av användaren.");
+                                    remainingEntry.FlushLog();
                                 }
                             }
                         }
                         Error = "Nedladdningen avbröts.";
+                        RefreshQueuePanelState();
                     });
                     break;
                 }
@@ -680,6 +755,7 @@ public sealed partial class LibraryViewModel
             }
             OnPropertyChanged(nameof(HasQueueEntries));
             _clearFinishedQueueEntriesCommand.RefreshCanExecute();
+            RefreshQueuePanelState();
         });
         return Task.CompletedTask;
     }
@@ -758,6 +834,7 @@ public sealed partial class LibraryViewModel
             }
             OnPropertyChanged(nameof(HasQueueEntries));
             _clearFinishedQueueEntriesCommand.RefreshCanExecute();
+            RefreshQueuePanelState();
         });
         return Task.CompletedTask;
     }

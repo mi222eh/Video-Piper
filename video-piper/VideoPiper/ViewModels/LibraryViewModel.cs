@@ -93,7 +93,9 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         _ => $"Alla filer ({TotalCount})",
     };
 
-    /// <summary>Unified search/URL box text. If a URL is entered, it enables download mode; otherwise debounces YouTube search.</summary>
+    /// <summary>Unified search/URL box text. If a URL is entered, it enables download mode.
+    /// A plain query only updates the box — the search itself runs when the user presses
+    /// Sök or Enter (<see cref="RunSearchNowAsync"/>).</summary>
     public string SearchQuery
     {
         get => _searchQuery;
@@ -120,11 +122,21 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             IsUrlInput = false;
             Url = string.Empty;
 
-            // Debounce: cancel any in-flight/pending search and start a fresh one.
+            // Editing the query invalidates any previous results — the search only runs
+            // on Sök/Enter. Cancel anything in flight and drop the stale results.
             _searchCts?.Cancel();
-            var cts = new CancellationTokenSource();
-            _searchCts = cts;
-            _ = RunSearchAsync(value, cts.Token);
+            IsSearching = false;
+            HasSearchResults = false;
+            SearchResults.Clear();
+            SelectedSearchResult = null;
+
+            // The query box is a search box — as soon as there is a real query the
+            // main area shows the search section, so Sök/Enter results never land
+            // behind the collection list ("ghost search").
+            if (trimmed.Length >= 2)
+            {
+                ActiveSection = LibrarySidebarSection.YouTubeSearch;
+            }
         }
     }
 
@@ -144,6 +156,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             if (Set(ref _isUrlInput, value))
             {
                 OnPropertyChanged(nameof(CanDownload));
+                OnPropertyChanged(nameof(ShowNoRootHint));
                 _downloadCommand.RefreshCanExecute();
             }
         }
@@ -254,6 +267,9 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
         OnUi(() =>
         {
+            // Same guard as the SearchQuery setter: an explicit search must show
+            // the search section, not leave results behind the collection list.
+            ActiveSection = LibrarySidebarSection.YouTubeSearch;
             Error = null;
             IsSearching = true;
             HasSearchResults = true;
@@ -305,76 +321,6 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task RunSearchAsync(string query, CancellationToken cancellationToken)
-    {
-        var trimmed = query.Trim();
-        if (trimmed.Length < 2)
-        {
-            OnUi(() =>
-            {
-                SearchResults.Clear();
-                HasSearchResults = false;
-                SelectedSearchResult = null;
-            });
-            return;
-        }
-
-        try
-        {
-            await Task.Delay(400, cancellationToken); // debounce window
-
-            OnUi(() =>
-            {
-                IsSearching = true;
-                HasSearchResults = true;
-                SelectedSearchResult = null;
-            });
-
-            var results = await _searchService.SearchAsync(trimmed, cancellationToken);
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            OnUi(() =>
-            {
-                SearchResults.Clear();
-                foreach (var result in results)
-                {
-                    SearchResults.Add(result);
-                }
-                OnPropertyChanged(nameof(HasResults));
-                OnPropertyChanged(nameof(ShowSearchList));
-                OnPropertyChanged(nameof(ShowNoResults));
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            // Superseded by a newer query — nothing to do.
-        }
-        catch (Exception ex)
-        {
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                OnUi(() =>
-                {
-                    Error = $"Sökningen misslyckades: {UiErrors.FromException(ex, "okänt fel")}";
-                    SearchResults.Clear();
-                    HasSearchResults = false;
-                    SelectedSearchResult = null;
-                });
-            }
-        }
-        finally
-        {
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                OnUi(() => IsSearching = false);
-            }
-        }
-    }
-
     /// <summary>The search result whose info page is open (or null). Selecting one never
     /// downloads — the info page's buttons do.</summary>
     public SearchResult? SelectedSearchResult
@@ -392,6 +338,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(ShowSearchList));
             OnPropertyChanged(nameof(ShowNoResults));
             OnPropertyChanged(nameof(CanDownloadSearchResult));
+            OnPropertyChanged(nameof(SearchDetailHint));
             RefreshSearchResultCommands();
 
             // Reset the per-result detail state, then enrich with the full metadata
@@ -477,11 +424,14 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             OnUi(() =>
             {
                 var description = YtDlpJson.GetDescription(json);
+                // Audio-only uploads carry no video formats — the info page hides its
+                // video option once this is known.
+                var hasVideo = YtDlpJson.HasVideoFormat(json);
                 if (!ReferenceEquals(_selectedSearchResult, result))
                 {
                     return;
                 }
-                _selectedSearchResult = result with { Description = description };
+                _selectedSearchResult = result with { Description = description, HasVideo = hasVideo };
                 OnPropertyChanged(nameof(SelectedSearchResult));
                 IsSearchingDetail = false;
             });
@@ -617,7 +567,11 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(RootPathDisplay));
                 OnPropertyChanged(nameof(IsRootSet));
                 OnPropertyChanged(nameof(CanDownload));
+                OnPropertyChanged(nameof(ShowCollectionEmptyState));
+                OnPropertyChanged(nameof(ShowNoRootHint));
+                OnPropertyChanged(nameof(SearchDetailHint));
                 _downloadCommand.RefreshCanExecute();
+                _resyncCommand.RefreshCanExecute();
                 RefreshSearchResultCommands();
             }
         }
@@ -625,6 +579,23 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
     public string RootPathDisplay => string.IsNullOrWhiteSpace(_rootPath) ? "Välj biblioteksmapp..." : _rootPath;
     public bool IsRootSet => !string.IsNullOrWhiteSpace(_rootPath);
+
+    /// <summary>The collection's "no items yet" empty state — only when a folder is set.
+    /// Without a folder, the first-launch "choose a folder" card takes over instead.</summary>
+    public bool ShowCollectionEmptyState => IsRootSet && !HasFilteredItems;
+
+    /// <summary>Hint under the search row: a URL is ready but no library folder is chosen yet.</summary>
+    public bool ShowNoRootHint => IsUrlInput && !IsRootSet;
+
+    /// <summary>Explanation line on the search info page — also explains why its download
+    /// buttons stay disabled until a library folder is chosen.</summary>
+    public string SearchDetailHint => _selectedSearchResult is null
+        ? string.Empty
+        : !IsRootSet
+            ? "Välj en biblioteksmapp först — nedladdningar sparas i den mapp du väljer."
+            : _selectedSearchResultInLibrary
+                ? "Den här videon finns redan i biblioteket."
+                : "Välj format för nedladdningen — den sparas i ditt bibliotek.";
 
     public string Url
     {
@@ -764,6 +735,11 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
     private async Task ResyncAsync()
     {
+        if (!IsRootSet)
+        {
+            return;
+        }
+
         var changed = _store.SyncWithDisk();
         await _store.SaveAsync();
         RefreshItems();
@@ -773,6 +749,15 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Lands a library item in <see cref="Items"/>. The common path — a progress tick
+    /// carrying the *same* instance the list already holds (the download service mutates
+    /// its registered item) — makes zero collection changes: the row is already bound to
+    /// that instance and its change notifications update it in place. Only real
+    /// membership changes (a new item, or a re-download arriving as a fresh instance)
+    /// touch the collections. This keeps the main list from being torn down and rebuilt
+    /// on every progress tick, which made the whole view flicker during downloads.
+    /// </summary>
     private void UpsertItem(LibraryItem item)
     {
         var index = -1;
@@ -785,20 +770,43 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             }
         }
 
-        if (index >= 0)
-        {
-            Items[index] = item;
-        }
-        else
+        var previous = index >= 0 ? Items[index] : null;
+
+        if (previous is null)
         {
             Items.Insert(0, item);
         }
+        else if (!ReferenceEquals(previous, item))
+        {
+            // A re-download of the same id arrives as a fresh instance (the service
+            // always builds a new LibraryItem) — swap the reference once so the row
+            // re-binds to it; every later tick is the in-place path above.
+            Items[index] = item;
+        }
 
-        FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
-        RefreshFilteredItems();
-        OnPropertyChanged(nameof(TotalCount));
-        OnPropertyChanged(nameof(AudioCount));
-        OnPropertyChanged(nameof(VideoCount));
+        // Filter, sort and the counts only depend on these fields; a plain progress
+        // tick on an unchanged instance must not rebuild the filtered list.
+        var affectsList = previous is null
+            || !ReferenceEquals(previous, item)
+            || previous.Status != item.Status
+            || previous.Kind != item.Kind
+            || previous.Title != item.Title
+            || previous.Uploader != item.Uploader
+            || previous.Playlist != item.Playlist
+            || previous.DurationSeconds != item.DurationSeconds;
+
+        if (affectsList)
+        {
+            FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
+            RefreshFilteredItems();
+            OnPropertyChanged(nameof(TotalCount));
+            OnPropertyChanged(nameof(AudioCount));
+            OnPropertyChanged(nameof(VideoCount));
+            // The header title embeds the active section's count — it must track the counts
+            // or it sits stale until the user switches sections.
+            OnPropertyChanged(nameof(SectionTitle));
+        }
+
         UpdateSelectedFileMissing();
 
         SyncSelectedSearchResultInLibrary(item.Id, item.Status);
@@ -820,6 +828,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             _selectedSearchResultInLibrary = inLibrary;
             OnPropertyChanged(nameof(SelectedSearchResultInLibrary));
             OnPropertyChanged(nameof(CanDownloadSearchResult));
+            OnPropertyChanged(nameof(SearchDetailHint));
             OnPropertyChanged(nameof(SelectedSearchResult));
             RefreshSearchResultCommands();
         }
@@ -957,6 +966,8 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         IsSearching = false;
         IsUrlInput = false;
         Url = string.Empty;
+        // Back to the library list, where newly queued entries become visible.
+        ActiveSection = LibrarySidebarSection.AllMedia;
         OnPropertyChanged(nameof(ShowEmptyState));
     }
 
@@ -976,61 +987,91 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(TotalCount));
             OnPropertyChanged(nameof(AudioCount));
             OnPropertyChanged(nameof(VideoCount));
+            OnPropertyChanged(nameof(SectionTitle));
         });
     }
 
+    /// <summary>
+    /// Re-syncs <see cref="FilteredItems"/> with the current filter/sort — minimally.
+    /// When the list already holds exactly the right items in the right order, only
+    /// swapped references are replaced in place (usually nothing fires at all); the
+    /// full Clear+Add only happens when membership or order actually changes (a filter
+    /// or sort change, or items added/removed) — never on plain progress ticks.
+    /// </summary>
     public void RefreshFilteredItems()
     {
         OnUi(() =>
         {
-            FilteredItems.Clear();
-            var query = _localSearchQuery.Trim();
-            var hasQuery = !string.IsNullOrEmpty(query);
+            var candidates = BuildFilteredCandidates();
 
-            var candidates = new List<LibraryItem>();
-            foreach (var item in Items)
+            var sameMembershipAndOrder = FilteredItems.Count == candidates.Count
+                && System.Linq.Enumerable.Range(0, candidates.Count).All(i => FilteredItems[i].Id == candidates[i].Id);
+
+            if (sameMembershipAndOrder)
             {
-                if (FilterIndex == 1 && item.Kind != MediaKind.Audio)
+                for (var i = 0; i < candidates.Count; i++)
                 {
-                    continue;
-                }
-                if (FilterIndex == 2 && item.Kind != MediaKind.Video)
-                {
-                    continue;
-                }
-                if (FilterIndex == 3 && item.Status != ItemStatus.Failed)
-                {
-                    continue;
-                }
-                if (hasQuery)
-                {
-                    var inTitle = item.Title.Contains(query, StringComparison.OrdinalIgnoreCase);
-                    var inUploader = item.Uploader?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
-                    var inPlaylist = item.Playlist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
-                    if (!inTitle && !inUploader && !inPlaylist)
+                    if (!ReferenceEquals(FilteredItems[i], candidates[i]))
                     {
-                        continue;
+                        FilteredItems[i] = candidates[i];
                     }
                 }
-
-                candidates.Add(item);
             }
-
-            candidates = _sortIndex switch
+            else
             {
-                1 => candidates.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase).ToList(),
-                2 => candidates.OrderByDescending(i => i.DurationSeconds ?? 0).ToList(),
-                _ => candidates,
-            };
-
-            foreach (var item in candidates)
-            {
-                FilteredItems.Add(item);
+                FilteredItems.Clear();
+                foreach (var item in candidates)
+                {
+                    FilteredItems.Add(item);
+                }
             }
 
             OnPropertyChanged(nameof(HasFilteredItems));
+            OnPropertyChanged(nameof(ShowCollectionEmptyState));
             OnPropertyChanged(nameof(ShowEmptyState));
         });
+    }
+
+    private List<LibraryItem> BuildFilteredCandidates()
+    {
+        var query = _localSearchQuery.Trim();
+        var hasQuery = !string.IsNullOrEmpty(query);
+
+        var candidates = new List<LibraryItem>();
+        foreach (var item in Items)
+        {
+            if (FilterIndex == 1 && item.Kind != MediaKind.Audio)
+            {
+                continue;
+            }
+            if (FilterIndex == 2 && item.Kind != MediaKind.Video)
+            {
+                continue;
+            }
+            if (FilterIndex == 3 && item.Status != ItemStatus.Failed)
+            {
+                continue;
+            }
+            if (hasQuery)
+            {
+                var inTitle = item.Title.Contains(query, StringComparison.OrdinalIgnoreCase);
+                var inUploader = item.Uploader?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
+                var inPlaylist = item.Playlist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false;
+                if (!inTitle && !inUploader && !inPlaylist)
+                {
+                    continue;
+                }
+            }
+
+            candidates.Add(item);
+        }
+
+        return _sortIndex switch
+        {
+            1 => candidates.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase).ToList(),
+            2 => candidates.OrderByDescending(i => i.DurationSeconds ?? 0).ToList(),
+            _ => candidates,
+        };
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

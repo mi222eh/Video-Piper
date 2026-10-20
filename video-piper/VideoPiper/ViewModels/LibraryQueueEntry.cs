@@ -16,6 +16,7 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
     public const int MaxLogLines = 400;
 
     private readonly object _logGate = new();
+    private bool _logDirty;
     private ItemStatus _status = ItemStatus.Queued;
     private double _percent;
     private MediaKind _kind = MediaKind.Audio;
@@ -56,6 +57,7 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(StatusGlyph));
                 OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsIndeterminate));
             }
         }
     }
@@ -69,6 +71,10 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
             if (Set(ref _percent, value))
             {
                 OnPropertyChanged(nameof(PercentFormatted));
+                // The row's "Laddar ner N%" line is StatusText — without this it sits
+                // at 0% for the whole download while the main window shows live percent.
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsIndeterminate));
             }
         }
     }
@@ -77,6 +83,11 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
     public ObservableCollection<string> Logs { get; } = new();
 
     public bool IsDownloading => Status == ItemStatus.Downloading;
+
+    /// <summary>True before the first percent tick lands — the row's bar then shows a
+    /// marquee instead of a value (mirrors LibraryItem.IsIndeterminate).</summary>
+    public bool IsIndeterminate => Status == ItemStatus.Downloading && Percent <= 0;
+
     public bool IsComplete => Status == ItemStatus.Complete;
     public bool IsFailed => Status == ItemStatus.Failed;
     public bool IsQueued => Status == ItemStatus.Queued;
@@ -131,6 +142,10 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
     /// <summary>
     /// Appends a log line (thread-safe — called from the download worker).
     /// The buffer is capped at <see cref="MaxLogLines"/> to keep memory bounded for long playlists.
+    /// No change notifications are raised here: the worker appends several lines per second
+    /// and each notification used to re-render the log panel (a full string join plus a
+    /// layout pass per line, which flickered while downloading). The view model calls
+    /// <see cref="FlushLog"/> on the UI thread at most once per dispatcher frame instead.
     /// </summary>
     public void AppendLog(string line)
     {
@@ -147,27 +162,44 @@ public sealed class LibraryQueueEntry : INotifyPropertyChanged
                 Logs.RemoveAt(0);
             }
             Logs.Add(stamp);
+            _logDirty = true;
         }
-
-        OnPropertyChanged(nameof(HasLogs));
-        OnPropertyChanged(nameof(Logs));
-        OnPropertyChanged(nameof(JoinedLogs));
     }
 
-    /// <summary>Clears all log lines (e.g. when a failed item is retried).</summary>
-    public void ClearLogs()
+    /// <summary>
+    /// Raises the pending log change notifications (once, on the UI thread). Called by the
+    /// view model from a coalesced <c>OnUi</c> — see <see cref="AppendLog"/>.
+    /// </summary>
+    public void FlushLog()
     {
+        bool dirty;
         lock (_logGate)
         {
-            if (Logs.Count == 0)
-            {
-                return;
-            }
-            Logs.Clear();
+            dirty = _logDirty;
+            _logDirty = false;
         }
-        OnPropertyChanged(nameof(HasLogs));
-        OnPropertyChanged(nameof(Logs));
-        OnPropertyChanged(nameof(JoinedLogs));
+        if (dirty)
+        {
+            OnPropertyChanged(nameof(HasLogs));
+            OnPropertyChanged(nameof(JoinedLogs));
+        }
+    }
+
+    /// <summary>Clears all log lines (e.g. when a failed item is retried) and notifies the UI.</summary>
+    public void ClearLogs()
+    {
+        bool hadLogs;
+        lock (_logGate)
+        {
+            hadLogs = Logs.Count > 0;
+            Logs.Clear();
+            _logDirty = false;
+        }
+        if (hadLogs)
+        {
+            OnPropertyChanged(nameof(HasLogs));
+            OnPropertyChanged(nameof(JoinedLogs));
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

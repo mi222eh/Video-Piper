@@ -139,9 +139,11 @@
                         <TextBlock Text="{Binding StatusText}" FontSize="11"
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <!-- Determinate bar: the percent IS the value (IsIndeterminate is only
+                             true before the first tick, so it matches the main list row and the progress card). -->
                         <ProgressBar Height="3" Maximum="100" CornerRadius="2"
                                      Value="{Binding Percent, FallbackValue=0}"
-                                     IsIndeterminate="{Binding IsDownloading}"
+                                     IsIndeterminate="{Binding IsIndeterminate, FallbackValue=False}"
                                      Visibility="{Binding IsDownloading, FallbackValue=False, Converter={StaticResource BoolToVisibility}}"/>
                     </StackPanel>
 
