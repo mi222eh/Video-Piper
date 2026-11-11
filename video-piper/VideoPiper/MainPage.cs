@@ -272,7 +272,7 @@ public sealed partial class MainPage : Page
                 .VerticalAlignment(VerticalAlignment.Center)
                 .Child(
                     new TextBlock()
-                        .Text(x => x.Binding(() => vm.TotalCount).Convert(_ => countFunc()))
+                        .Text(x => x.Binding(() => vm.SidebarCountsVersion).Convert(_ => countFunc()))
                         .FontSize(11)
                         .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
                 );
@@ -529,6 +529,33 @@ public sealed partial class MainPage : Page
 
     private static Grid BuildSearchResultsArea(LibraryViewModel vm)
     {
+        // Offline matches appear instantly while typing; no request is made for them.
+        var localList = new ListView()
+            .ItemsSource(x => x.Binding(() => vm.LocalSearchResults))
+            .IsItemClickEnabled(true)
+            .SelectionMode(ListViewSelectionMode.None)
+            .MaxHeight(220);
+        localList.ItemTemplate = Application.Current.Resources["LibraryItemTemplate"] as DataTemplate;
+        localList.ItemClick += (_, e) =>
+        {
+            if (e.ClickedItem is LibraryItem item)
+            {
+                vm.OpenLibraryItem(item);
+            }
+        };
+
+        var localSection = new StackPanel()
+            .Spacing(6)
+            .Visibility(x => x.Binding(() => vm.ShowLocalSearch).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+            .Children(
+                new TextBlock()
+                    .Text(x => x.Binding(() => vm.LocalMatchesHeader))
+                    .FontSize(12)
+                    .FontWeight(FontWeights.SemiBold)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
+                localList
+            );
+
         var searchList = new ListView()
             .ItemsSource(x => x.Binding(() => vm.SearchResults))
             .IsItemClickEnabled(true)
@@ -536,8 +563,8 @@ public sealed partial class MainPage : Page
         searchList.ItemTemplate = Application.Current.Resources["SearchResultTemplate"] as DataTemplate;
         searchList.ItemClick += (_, e) =>
         {
-            // Clicking a result opens its video info page (no download) — the
-            // download buttons on that page choose the format.
+            // Clicking a result opens its media page (no download) — that page
+            // chooses between playing/streaming and downloading either format.
             if (e.ClickedItem is SearchResult result)
             {
                 vm.SelectSearchResult(result);
@@ -552,7 +579,7 @@ public sealed partial class MainPage : Page
             .Children(
                 new FontIcon().Glyph("\uE721").FontSize(44).Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
                 new TextBlock().Text("Sök efter musik på YouTube").FontSize(16).FontWeight(FontWeights.SemiBold).HorizontalAlignment(HorizontalAlignment.Center),
-                new TextBlock().Text("Skriv in en artist, låt eller YouTube-länk ovan och tryck på Sök eller Enter.")
+                new TextBlock().Text("Dina offline-filer matchas medan du skriver. Tryck Sök eller Enter för YouTube-resultat.")
                     .FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).HorizontalAlignment(HorizontalAlignment.Center)
             );
 
@@ -577,23 +604,169 @@ public sealed partial class MainPage : Page
                 new TextBlock().Text("Hittade inga resultat. Pröv en annan sökterm eller ett annat sökord.")
                     .FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).HorizontalAlignment(HorizontalAlignment.Center)
             );
+
+        var youtubeArea = new Grid().Children(
+            emptyHelp,
+            searchList,
+            loadingRing,
+            noResults
+        );
+
         return new Grid()
-            .Visibility(x => x.Binding(() => vm.IsSearchActive).Convert(a => a ? Visibility.Visible : Visibility.Collapsed))
+            .Visibility(x => x.Binding(() => vm.ShowSearchBrowser).Convert(a => a ? Visibility.Visible : Visibility.Collapsed))
+            .RowDefinitions(
+                new RowDefinition { Height = GridLength.Auto },
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }
+            )
+            .RowSpacing(10)
             .Children(
-                emptyHelp,
-                searchList,
-                loadingRing,
-                noResults
+                localSection.Grid(row: 0),
+                youtubeArea.Grid(row: 1)
             );
     }
 
     /// <summary>
-    /// The video info page shown when a search result is clicked: the video's title,
-    /// metadata and description, plus the two download actions ("Ladda ner ljud" /
-    /// "Ladda ner video"). Clicking a search result never starts a download on its own.
+    /// The media page shown when a search result is clicked: thumbnail, title, metadata,
+    /// offline availability, a Spela action (offline-first, streaming otherwise), a forced
+    /// Strömma action, and per-format download buttons.
     /// </summary>
     private static Border BuildSearchDetailPage(LibraryViewModel vm)
     {
+        var thumbnail = new Border()
+            .Width(220)
+            .Height(124)
+            .CornerRadius(new CornerRadius(8))
+            .Background(ThemeResource.Get<Brush>("LayerFillColorDefaultBrush"))
+            .BorderBrush(ThemeResource.Get<Brush>("CardStrokeColorDefaultBrush"))
+            .BorderThickness(new Thickness(1))
+            .VerticalAlignment(VerticalAlignment.Top)
+            .Child(
+                new Grid().Children(
+                    new FontIcon().Glyph("\uE714").FontSize(28).HorizontalAlignment(HorizontalAlignment.Center).VerticalAlignment(VerticalAlignment.Center).Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush")),
+                    new Image()
+                        .Stretch(Stretch.UniformToFill)
+                        .Source(x => x.Binding(() => vm.SelectedSearchResult).Convert(r =>
+                            string.IsNullOrEmpty(r?.ThumbnailUrl)
+                                ? null!
+                                : new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(r.ThumbnailUrl))))
+                )
+            );
+
+        var header = new Grid()
+            .ColumnDefinitions(
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            )
+            .ColumnSpacing(16)
+            .Children(
+                thumbnail.Grid(column: 0),
+                new StackPanel()
+                    .Grid(column: 1)
+                    .Spacing(6)
+                    .Children(
+                        new TextBlock()
+                            .Text("VIDEO")
+                            .FontSize(10)
+                            .FontWeight(FontWeights.SemiBold)
+                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
+                        new TextBlock()
+                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Title ?? string.Empty))
+                            .FontSize(20)
+                            .FontWeight(FontWeights.SemiBold)
+                            .TextWrapping(TextWrapping.Wrap),
+                        new TextBlock()
+                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.DetailText ?? string.Empty))
+                            .FontSize(12)
+                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                            .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.DetailText) ? Visibility.Visible : Visibility.Collapsed)),
+                        new StackPanel()
+                            .Orientation(Orientation.Horizontal)
+                            .Spacing(6)
+                            .Children(
+                                new Border()
+                                    .CornerRadius(new CornerRadius(6))
+                                    .Padding(new Thickness(8, 2, 8, 2))
+                                    .Background(ThemeResource.Get<Brush>("VpSuccessBgBrush"))
+                                    .BorderBrush(ThemeResource.Get<Brush>("VpSuccessBorderBrush"))
+                                    .BorderThickness(new Thickness(1))
+                                    .Visibility(x => x.Binding(() => vm.SearchAudioOffline).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+                                    .Child(
+                                        new TextBlock().Text("MP3 offline").FontSize(10).FontWeight(FontWeights.SemiBold)
+                                            .Foreground(ThemeResource.Get<Brush>("VpSuccessBrush"))),
+                                new Border()
+                                    .CornerRadius(new CornerRadius(6))
+                                    .Padding(new Thickness(8, 2, 8, 2))
+                                    .Background(ThemeResource.Get<Brush>("VpSuccessBgBrush"))
+                                    .BorderBrush(ThemeResource.Get<Brush>("VpSuccessBorderBrush"))
+                                    .BorderThickness(new Thickness(1))
+                                    .Visibility(x => x.Binding(() => vm.SearchVideoOffline).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+                                    .Child(
+                                        new TextBlock().Text("MP4 offline").FontSize(10).FontWeight(FontWeights.SemiBold)
+                                            .Foreground(ThemeResource.Get<Brush>("VpSuccessBrush")))
+                            )
+                    )
+            );
+
+        var playButton = new Button()
+            .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+            .Padding(new Thickness(14, 9, 14, 9))
+            .CornerRadius(new CornerRadius(8))
+            .Command(x => x.Binding(() => vm.PlaySearchResultCommand))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE768").FontSize(13),
+                        new TextBlock().Text("Spela").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+
+        var streamButton = new Button()
+            .Padding(new Thickness(14, 9, 14, 9))
+            .CornerRadius(new CornerRadius(8))
+            .Command(x => x.Binding(() => vm.StreamSearchResultCommand))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE774").FontSize(13),
+                        new TextBlock().Text("Strömma").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+#if !WINDOWS
+        streamButton.Visibility = Visibility.Collapsed;
+#endif
+
+        var audioButton = new Button()
+            .Padding(new Thickness(14, 9, 14, 9))
+            .CornerRadius(new CornerRadius(8))
+            .Command(x => x.Binding(() => vm.DownloadSearchResultAudioCommand))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE8D6").FontSize(13),
+                        new TextBlock().Text("Ladda ner ljud").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+
+        var videoButton = new Button()
+            .Padding(new Thickness(14, 9, 14, 9))
+            .CornerRadius(new CornerRadius(8))
+            .Command(x => x.Binding(() => vm.DownloadSearchResultVideoCommand))
+            .Visibility(x => x.Binding(() => vm.SelectedSearchResult)
+                .Convert(r => (r?.HasVideo ?? true) ? Visibility.Visible : Visibility.Collapsed))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE714").FontSize(13),
+                        new TextBlock().Text("Ladda ner video").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+
+        var actions = new StackPanel()
+            .Orientation(Orientation.Horizontal)
+            .Spacing(8)
+            .Margin(new Thickness(0, 6, 0, 0))
+            .Children(playButton, streamButton, audioButton, videoButton);
+
         return new Border()
             .CornerRadius(new CornerRadius(10))
             .Background(ThemeResource.Get<Brush>("CardBackgroundFillColorDefaultBrush"))
@@ -607,100 +780,44 @@ public sealed partial class MainPage : Page
                     .HorizontalScrollBarVisibility(ScrollBarVisibility.Disabled)
                     .Content(
                         new StackPanel()
-                            .Spacing(8)
+                            .Spacing(10)
                             .Children(
-                        new TextBlock()
-                            .Text("Video")
-                            .FontSize(11)
-                            .FontWeight(FontWeights.SemiBold)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Title ?? string.Empty))
-                            .FontSize(20)
-                            .FontWeight(FontWeights.SemiBold)
-                            .TextWrapping(TextWrapping.Wrap),
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.DetailText ?? string.Empty))
-                            .FontSize(12)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.DetailText) ? Visibility.Visible : Visibility.Collapsed)),
-                        // Download options above the description, so the primary
-                        // actions are visible without scrolling past a long text.
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.SearchDetailHint))
-                            .FontSize(12)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")),
-                        new Grid()
-                            .HorizontalAlignment(HorizontalAlignment.Left)
-                            .Margin(new Thickness(0, 6, 0, 0))
-                            .ColumnDefinitions(
-                                new ColumnDefinition { Width = GridLength.Auto },
-                                new ColumnDefinition { Width = GridLength.Auto }
-                            )
-                            .ColumnSpacing(8)
-                            .Children(
-                                new Button()
-                                    .Grid(column: 0)
-                                    .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
-                                    .Padding(new Thickness(14, 9, 14, 9))
-                                    .CornerRadius(new CornerRadius(8))
-                                    .Command(x => x.Binding(() => vm.DownloadSearchResultAudioCommand))
-                                    .Content(
-                                        new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
-                                            .Children(
-                                                new FontIcon().Glyph("\uE8D6").FontSize(13),
-                                                new TextBlock().Text("Ladda ner ljud").FontSize(13).FontWeight(FontWeights.SemiBold)
-                                            )
-                                    ),
-                                // Neutral (not accent): only one primary action per view —
-                                // audio is the app's default format, so it keeps the accent.
-                                // Hidden for audio-only uploads (HasVideo == false); while
-                                // the detail fetch is pending (HasVideo == null) it stays
-                                // visible so a normal video is never blocked.
-                                new Button()
-                                    .Grid(column: 1)
-                                    .Padding(new Thickness(14, 9, 14, 9))
-                                    .CornerRadius(new CornerRadius(8))
-                                    .Command(x => x.Binding(() => vm.DownloadSearchResultVideoCommand))
-                                    .Visibility(x => x.Binding(() => vm.SelectedSearchResult)
-                                        .Convert(r => (r?.HasVideo ?? true) ? Visibility.Visible : Visibility.Collapsed))
-                                    .Content(
-                                        new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
-                                            .Children(
-                                                new FontIcon().Glyph("\uE714").FontSize(13),
-                                                new TextBlock().Text("Ladda ner video").FontSize(13).FontWeight(FontWeights.SemiBold)
-                                            )
-                                    )
-                            ),
-                        new StackPanel()
-                            .Spacing(6)
-                            .HorizontalAlignment(HorizontalAlignment.Left)
-                            .Visibility(x => x.Binding(() => vm.IsSearchingDetail).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
-                            .Children(
-                                new ProgressRing().Width(20).Height(20).IsActive(true),
-                                new TextBlock().Text("Hämtar detaljer...").FontSize(12)
-                            ),
-                        new Border()
-                            .CornerRadius(new CornerRadius(8))
-                            .Padding(new Thickness(12, 6, 12, 6))
-                            .Background(ThemeResource.Get<Brush>("VpErrorBgBrush"))
-                            .BorderBrush(ThemeResource.Get<Brush>("VpErrorBorderBrush"))
-                            .BorderThickness(new Thickness(1))
-                            .Visibility(x => x.Binding(() => vm.SelectedSearchDetailError).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
-                            .Child(
+                                header,
                                 new TextBlock()
-                                    .Text(x => x.Binding(() => vm.SelectedSearchDetailError))
-                                    .FontSize(11)
+                                    .Text(x => x.Binding(() => vm.SearchDetailHint))
+                                    .FontSize(12)
+                                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                                    .TextWrapping(TextWrapping.Wrap),
+                                actions,
+                                new StackPanel()
+                                    .Spacing(6)
+                                    .HorizontalAlignment(HorizontalAlignment.Left)
+                                    .Visibility(x => x.Binding(() => vm.IsSearchingDetail).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+                                    .Children(
+                                        new ProgressRing().Width(20).Height(20).IsActive(true),
+                                        new TextBlock().Text("Hämtar detaljer...").FontSize(12)
+                                    ),
+                                new Border()
+                                    .CornerRadius(new CornerRadius(8))
+                                    .Padding(new Thickness(12, 6, 12, 6))
+                                    .Background(ThemeResource.Get<Brush>("VpErrorBgBrush"))
+                                    .BorderBrush(ThemeResource.Get<Brush>("VpErrorBorderBrush"))
+                                    .BorderThickness(new Thickness(1))
+                                    .Visibility(x => x.Binding(() => vm.SelectedSearchDetailError).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
+                                    .Child(
+                                        new TextBlock()
+                                            .Text(x => x.Binding(() => vm.SelectedSearchDetailError))
+                                            .FontSize(11)
+                                            .TextWrapping(TextWrapping.Wrap)
+                                    ),
+                                // Description last: the long, scrollable content.
+                                new TextBlock()
+                                    .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Description ?? string.Empty))
+                                    .FontSize(13)
+                                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
                                     .TextWrapping(TextWrapping.Wrap)
-                            ),
-                        // Description last: the long, scrollable content.
-                        new TextBlock()
-                            .Text(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => r?.Description ?? string.Empty))
-                            .FontSize(13)
-                            .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
-                            .TextWrapping(TextWrapping.Wrap)
-                            .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.Description) ? Visibility.Visible : Visibility.Collapsed))
-                    )
+                                    .Visibility(x => x.Binding(() => vm.SelectedSearchResult).Convert(r => !string.IsNullOrEmpty(r?.Description) ? Visibility.Visible : Visibility.Collapsed))
+                            )
                     )
             );
     }
@@ -1384,6 +1501,59 @@ public sealed partial class MainPage : Page
             .Children(closeButton);
 #endif
 
+        var kindSwitch = new StackPanel()
+            .Orientation(Orientation.Horizontal)
+            .Spacing(4)
+            .VerticalAlignment(VerticalAlignment.Center)
+            .Margin(new Thickness(0, 0, 8, 0))
+            .Visibility(x => x.Binding(() => vm.PlayerCanSwitchKind).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+            .Children(
+                BuildPlayerKindButton(vm, MediaKind.Audio),
+                BuildPlayerKindButton(vm, MediaKind.Video)
+            );
+
+        var sourceBadge = new Border()
+            .Padding(new Thickness(6, 2, 6, 2))
+            .CornerRadius(new CornerRadius(4))
+            .Background(ThemeResource.Get<Brush>("SubtleFillColorSecondaryBrush"))
+            .VerticalAlignment(VerticalAlignment.Center)
+            .Child(
+                new TextBlock()
+                    .Text(x => x.Binding(() => vm.PlayerSourceLabel))
+                    .FontSize(10)
+                    .FontWeight(FontWeights.SemiBold)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+            );
+
+        var titleStack = new StackPanel()
+            .Spacing(1)
+            .VerticalAlignment(VerticalAlignment.Center)
+            .Children(
+                new StackPanel()
+                    .Orientation(Orientation.Horizontal)
+                    .Spacing(8)
+                    .Children(
+                        new FontIcon()
+                            .Glyph("\uE768")
+                            .FontSize(13)
+                            .Foreground(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
+                            .VerticalAlignment(VerticalAlignment.Center),
+                        new TextBlock()
+                            .Text(x => x.Binding(() => vm.PlayerTitle).Convert(t => string.IsNullOrEmpty(t) ? "Spelar" : t))
+                            .FontSize(12)
+                            .FontWeight(FontWeights.SemiBold)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .VerticalAlignment(VerticalAlignment.Center),
+                        sourceBadge
+                    ),
+                new TextBlock()
+                    .Text(x => x.Binding(() => vm.PlayerSubtitle).Convert(s => s ?? string.Empty))
+                    .FontSize(10)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                    .Visibility(x => x.Binding(() => vm.PlayerSubtitle).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
+            );
+
 #if WINDOWS
         var dockedPlayer = new MediaPlayerElement()
             .Grid(row: 1)
@@ -1391,10 +1561,45 @@ public sealed partial class MainPage : Page
             .Visibility(x => x.Binding(() => vm.IsDockedPlayerVisible).Convert(v => v ? Visibility.Visible : Visibility.Collapsed))
             .AutoPlay(false)
             .AreTransportControlsEnabled(true)
-            .Source(x => x.Binding(() => vm.PlayingItem).Convert(item =>
-                string.IsNullOrEmpty(item?.FilePath)
+            .Source(x => x.Binding(() => vm.PlayerSourceUri).Convert(uri =>
+                string.IsNullOrEmpty(uri)
                     ? null!
-                    : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(item.FilePath))));
+                    : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(uri))));
+
+        // "Spela" is a view-model event: the element's transport Play is the only way to
+        // start playback, and a source set by a binding is not open yet when the event
+        // fires. Queue the play and run it on MediaOpened.
+        var playPending = false;
+        void TryPlay()
+        {
+            var player = dockedPlayer.MediaPlayer;
+            if (player?.Source is null)
+            {
+                playPending = true;
+                return;
+            }
+            playPending = false;
+            player.Play();
+        }
+
+        dockedPlayer.Loaded += (_, _) =>
+        {
+            if (dockedPlayer.MediaPlayer is { } player)
+            {
+                player.MediaOpened += (_, _) =>
+                {
+                    if (playPending)
+                    {
+                        App.PostToUiThread(TryPlay);
+                    }
+                };
+            }
+            if (playPending)
+            {
+                TryPlay();
+            }
+        };
+        vm.PlaybackRequested += () => App.PostToUiThread(TryPlay);
 
         // Collapsing the element for the pop-out only hides it — its MediaPlayer keeps
         // playing, which would double up with the pop-out window's own player. Suspend
@@ -1412,7 +1617,7 @@ public sealed partial class MainPage : Page
                 wasPlayingBeforePopOut = player.PlaybackSession?.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing;
                 player.Pause();
             }
-            else if (wasPlayingBeforePopOut && vm.PlayingItem is not null && player.Source is not null)
+            else if (wasPlayingBeforePopOut && vm.PlayerSourceUri is not null && player.Source is not null)
             {
                 player.Play();
                 wasPlayingBeforePopOut = false;
@@ -1420,43 +1625,101 @@ public sealed partial class MainPage : Page
         };
 #endif
 
-        // The "file is missing" prompt shows in place of the player surface.
+        // The "file is missing" prompt shows in place of the player surface — unless a
+        // stream is loading/playing (the user chose Strömma instead of downloading).
+        var downloadMissingButton = new Button()
+            .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+            .Padding(new Thickness(14, 8, 14, 8))
+            .CornerRadius(new CornerRadius(6))
+            .Command(x => x.Binding(() => vm.DownloadSelectedCommand))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE896").FontSize(13),
+                        new TextBlock().Text("Ladda ner").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+
+        var streamMissingButton = new Button()
+            .Padding(new Thickness(14, 8, 14, 8))
+            .CornerRadius(new CornerRadius(6))
+            .Command(x => x.Binding(() => vm.StreamSelectedCommand))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
+                    .Children(
+                        new FontIcon().Glyph("\uE774").FontSize(13),
+                        new TextBlock().Text("Strömma").FontSize(13).FontWeight(FontWeights.SemiBold)
+                    )
+            );
+#if !WINDOWS
+        streamMissingButton.Visibility = Visibility.Collapsed;
+#endif
+
         var missingPrompt = new StackPanel()
             .Grid(row: 1)
             .Spacing(10)
             .HorizontalAlignment(HorizontalAlignment.Center)
             .VerticalAlignment(VerticalAlignment.Center)
-            .Visibility(x => x.Binding(() => vm.SelectedFileMissing).Convert(m => m ? Visibility.Visible : Visibility.Collapsed))
+            .Visibility(x => x.Binding(() => vm.ShowMissingPrompt).Convert(m => m ? Visibility.Visible : Visibility.Collapsed))
             .Children(
                 new FontIcon().Glyph("\uE895").FontSize(44).Foreground(ThemeResource.Get<Brush>("TextFillColorTertiaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
                 new TextBlock().Text("Filen saknas på disk").FontSize(16).FontWeight(FontWeights.SemiBold).HorizontalAlignment(HorizontalAlignment.Center),
-                new TextBlock().Text("Filen har tagits bort eller flyttats. Ladda ner den igen för att spela upp den.").FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
-                new Button()
-                    .Style(ThemeResource.Get<Style>("AccentButtonStyle"))
+                new TextBlock().Text("Filen har tagits bort eller flyttats. Ladda ner den igen eller strömma den från YouTube.")
+                    .FontSize(12).Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush")).HorizontalAlignment(HorizontalAlignment.Center),
+                new StackPanel()
+                    .Orientation(Orientation.Horizontal)
+                    .Spacing(8)
                     .HorizontalAlignment(HorizontalAlignment.Center)
-                    .Padding(new Thickness(14, 8, 14, 8))
+                    .Children(downloadMissingButton, streamMissingButton)
+            );
+
+        var loadingOverlay = new StackPanel()
+            .Grid(row: 1)
+            .Spacing(8)
+            .HorizontalAlignment(HorizontalAlignment.Center)
+            .VerticalAlignment(VerticalAlignment.Center)
+            .Visibility(x => x.Binding(() => vm.PlayerIsStreamLoading).Convert(s => s ? Visibility.Visible : Visibility.Collapsed))
+            .Children(
+                new ProgressRing().Width(34).Height(34).IsActive(true),
+                new TextBlock()
+                    .Text(x => x.Binding(() => vm.PlayerStreamStatus).Convert(s => s ?? "Buffrar..."))
+                    .FontSize(12)
+                    .Foreground(ThemeResource.Get<Brush>("TextFillColorSecondaryBrush"))
+            );
+
+        var streamError = new StackPanel()
+            .Grid(row: 1)
+            .Spacing(8)
+            .MaxWidth(460)
+            .HorizontalAlignment(HorizontalAlignment.Center)
+            .VerticalAlignment(VerticalAlignment.Center)
+            .Visibility(x => x.Binding(() => vm.PlayerStreamError).Convert(s => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible))
+            .Children(
+                new TextBlock()
+                    .Text(x => x.Binding(() => vm.PlayerStreamError))
+                    .FontSize(12)
+                    .TextWrapping(TextWrapping.Wrap)
+                    .HorizontalAlignment(HorizontalAlignment.Center)
+                    .Foreground(ThemeResource.Get<Brush>("VpErrorBrush")),
+                new Button()
+                    .Padding(new Thickness(12, 6, 12, 6))
                     .CornerRadius(new CornerRadius(6))
-                    .Command(x => x.Binding(() => vm.DownloadSelectedCommand))
-                    .Content(
-                        new StackPanel().Orientation(Orientation.Horizontal).Spacing(6)
-                            .Children(
-                                new FontIcon().Glyph("\uE896").FontSize(13),
-                                new TextBlock().Text("Ladda ner").FontSize(13).FontWeight(FontWeights.SemiBold)
-                            )
-                    )
+                    .HorizontalAlignment(HorizontalAlignment.Center)
+                    .Command(x => x.Binding(() => vm.RetryStreamCommand))
+                    .Content(new TextBlock().Text("Försök igen").FontSize(12))
             );
 
 #if WINDOWS
         var playerSurface = new Grid()
             .Grid(row: 1)
-            .Children(dockedPlayer, missingPrompt);
+            .Children(dockedPlayer, missingPrompt, loadingOverlay, streamError);
 #else
         var playerSurface = new Grid()
             .Grid(row: 1)
             .Children(
                 new StackPanel()
                     .Spacing(2)
-                    .Visibility(x => x.Binding(() => vm.SelectedFileMissing).Convert(m => m ? Visibility.Collapsed : Visibility.Visible))
+                    .Visibility(x => x.Binding(() => vm.ShowMissingPrompt).Convert(m => m ? Visibility.Collapsed : Visibility.Visible))
                     .Children(
                         new TextBlock()
                             .Text("Spelning i appen stöds endast på Windows. Filen är sparad i biblioteket.")
@@ -1486,32 +1749,35 @@ public sealed partial class MainPage : Page
                             .Grid(row: 0)
                             .ColumnDefinitions(
                                 new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                                new ColumnDefinition { Width = GridLength.Auto },
                                 new ColumnDefinition { Width = GridLength.Auto }
                             )
                             .Children(
-                                new StackPanel()
-                                    .Grid(column: 0)
-                                    .Orientation(Orientation.Horizontal)
-                                    .Spacing(8)
-                                    .VerticalAlignment(VerticalAlignment.Center)
-                                    .Children(
-                                        new FontIcon()
-                                            .Glyph("\uE768")
-                                            .FontSize(13)
-                                            .Foreground(ThemeResource.Get<Brush>("AccentFillColorDefaultBrush"))
-                                            .VerticalAlignment(VerticalAlignment.Center),
-                                        new TextBlock()
-                                            .Text(x => x.Binding(() => vm.SelectedItem).Convert(item => item?.Title ?? "Spelar"))
-                                            .FontSize(12)
-                                            .FontWeight(FontWeights.SemiBold)
-                                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                                            .VerticalAlignment(VerticalAlignment.Center)
-                                    ),
-                                headerButtons.Grid(column: 1)
+                                titleStack.Grid(column: 0),
+                                kindSwitch.Grid(column: 1),
+                                headerButtons.Grid(column: 2)
                             ),
                         playerSurface
                     )
             );
+    }
+
+    private static Button BuildPlayerKindButton(LibraryViewModel vm, MediaKind kind)
+    {
+        var isAudio = kind == MediaKind.Audio;
+        var button = new Button()
+            .Padding(new Thickness(8, 4, 8, 4))
+            .CornerRadius(new CornerRadius(6))
+            .Command(new RelayCommand(() => vm.SetPlayerKindAsync(kind)))
+            .Content(
+                new StackPanel().Orientation(Orientation.Horizontal).Spacing(4)
+                    .Children(
+                        new FontIcon().Glyph(isAudio ? "\uE8D6" : "\uE714").FontSize(11),
+                        new TextBlock().Text(isAudio ? "MP3" : "MP4").FontSize(11)
+                    )
+            );
+        WithTip(button, isAudio ? "Spela ljudversionen (offline eller strömmad)" : "Spela videoversionen (offline eller strömmad)");
+        return button;
     }
 
     /// <summary>Runtime theme-resource lookup for use inside .Convert lambdas (returns a real Brush).</summary>

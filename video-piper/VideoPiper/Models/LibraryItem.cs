@@ -38,6 +38,11 @@ public sealed class LibraryItem : INotifyPropertyChanged
     private double? _percent;
     private double? _durationSeconds;
     private string? _filePath;
+    private string? _audioFilePath;
+    private string? _videoFilePath;
+    private MediaKind? _lastPlayedKind;
+    private string? _thumbnailUrl;
+    private string? _localThumbnailPath;
     private string? _error;
 
     /// <summary>Stable id: yt-dlp video id, or a hash of the URL when no id is available.</summary>
@@ -82,9 +87,14 @@ public sealed class LibraryItem : INotifyPropertyChanged
         {
             if (Set(ref _kind, value))
             {
+                Set(ref _filePath, value == MediaKind.Audio ? _audioFilePath : _videoFilePath, nameof(FilePath));
                 OnPropertyChanged(nameof(IconGlyph));
                 OnPropertyChanged(nameof(KindLabel));
                 OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(HasAudio));
+                OnPropertyChanged(nameof(HasVideo));
+                OnPropertyChanged(nameof(PreferredKind));
+                OnPropertyChanged(nameof(CanPlay));
             }
         }
     }
@@ -136,17 +146,224 @@ public sealed class LibraryItem : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Absolute path to the media file once complete (or partially downloaded).</summary>
+    /// <summary>
+    /// Legacy primary file path (kept for index compatibility). New code uses
+    /// <see cref="PathFor"/> / <see cref="AudioFilePath"/> / <see cref="VideoFilePath"/>
+    /// because one video can have both an MP3 and an MP4 on disk.
+    /// </summary>
     public string? FilePath
     {
         get => _filePath;
+        set => Set(ref _filePath, value);
+    }
+
+    /// <summary>Absolute path to the downloaded MP3, when one exists.</summary>
+    public string? AudioFilePath
+    {
+        get => _audioFilePath;
+        set => SetPath(MediaKind.Audio, value, nameof(AudioFilePath));
+    }
+
+    /// <summary>Absolute path to the downloaded MP4, when one exists.</summary>
+    public string? VideoFilePath
+    {
+        get => _videoFilePath;
+        set => SetPath(MediaKind.Video, value, nameof(VideoFilePath));
+    }
+
+    /// <summary>The format the user last chose for this item; playback prefers it.</summary>
+    public MediaKind? LastPlayedKind
+    {
+        get => _lastPlayedKind;
         set
         {
-            if (Set(ref _filePath, value))
+            if (Set(ref _lastPlayedKind, value))
             {
-                OnPropertyChanged(nameof(CanPlay));
+                OnPropertyChanged(nameof(PreferredKind));
             }
         }
+    }
+
+    /// <summary>Remote thumbnail URL (usually derived from the YouTube id).</summary>
+    public string? ThumbnailUrl
+    {
+        get => _thumbnailUrl;
+        set
+        {
+            if (Set(ref _thumbnailUrl, value))
+            {
+                OnPropertyChanged(nameof(ThumbnailUri));
+            }
+        }
+    }
+
+    /// <summary>Cached thumbnail path under the app data folder, when one has been saved.</summary>
+    public string? LocalThumbnailPath
+    {
+        get => _localThumbnailPath;
+        set
+        {
+            if (Set(ref _localThumbnailPath, value))
+            {
+                OnPropertyChanged(nameof(ThumbnailUri));
+            }
+        }
+    }
+
+    /// <summary>Image URI for the row: the cached file when present, else the remote URL.</summary>
+    public string? ThumbnailUri =>
+        !string.IsNullOrEmpty(_localThumbnailPath) && File.Exists(_localThumbnailPath)
+            ? _localThumbnailPath
+            : _thumbnailUrl;
+
+    /// <summary>The file path for a specific format, or null when that format is not downloaded.</summary>
+    public string? PathFor(MediaKind kind) => kind == MediaKind.Audio
+        ? _audioFilePath ?? (Kind == MediaKind.Audio ? _filePath : null)
+        : _videoFilePath ?? (Kind == MediaKind.Video ? _filePath : null);
+
+    /// <summary>True when the MP3 is recorded and still exists on disk.</summary>
+    public bool HasAudioFile => !string.IsNullOrEmpty(AudioFilePath) && File.Exists(AudioFilePath);
+
+    /// <summary>True when the MP4 is recorded and still exists on disk.</summary>
+    public bool HasVideoFile => !string.IsNullOrEmpty(VideoFilePath) && File.Exists(VideoFilePath);
+
+    public bool HasAnyFile => HasAudioFile || HasVideoFile;
+
+    /// <summary>Section membership: has audio (downloaded, or queued as audio).</summary>
+    public bool HasAudio => HasAudioFile || (Kind == MediaKind.Audio && !HasVideoFile);
+
+    /// <summary>Section membership: has video (downloaded, or queued as video).</summary>
+    public bool HasVideo => HasVideoFile || (Kind == MediaKind.Video && !HasAudioFile);
+
+    /// <summary>
+    /// The format to play by default: the last one the user chose for this item when it is
+    /// available; otherwise video when an MP4 exists; otherwise audio.
+    /// </summary>
+    public MediaKind PreferredKind
+    {
+        get
+        {
+            if (_lastPlayedKind == MediaKind.Audio && HasAudioFile)
+            {
+                return MediaKind.Audio;
+            }
+            if (_lastPlayedKind == MediaKind.Video && HasVideoFile)
+            {
+                return MediaKind.Video;
+            }
+            if (HasVideoFile)
+            {
+                return MediaKind.Video;
+            }
+            if (HasAudioFile)
+            {
+                return MediaKind.Audio;
+            }
+            return _lastPlayedKind ?? Kind;
+        }
+    }
+
+    /// <summary>
+    /// Fills the per-format paths for indexes written before this field existed:
+    /// the legacy <see cref="FilePath"/> maps to its <see cref="Kind"/>, then the item's
+    /// folder is scanned by the <c>[id]</c> marker for the other format (MP3 next to MP4 is
+    /// normal after the MP3-reuse merge).
+    /// </summary>
+    public void MigratePaths()
+    {
+        if (!string.IsNullOrEmpty(_filePath))
+        {
+            if (Kind == MediaKind.Audio)
+            {
+                _audioFilePath ??= _filePath;
+            }
+            else
+            {
+                _videoFilePath ??= _filePath;
+            }
+        }
+
+        var folder = Path.GetDirectoryName(_audioFilePath ?? _videoFilePath ?? _filePath);
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        var marker = $"[{Id}]";
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(folder))
+            {
+                if (!file.Contains(marker, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Ignore ffmpeg's in-progress merge temp (a crash can leave one behind).
+                if (file.Contains(".merging.", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var extension = Path.GetExtension(file);
+                if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase))
+                {
+                    _audioFilePath ??= file;
+                }
+                else if (extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
+                         || extension.Equals(".webm", StringComparison.OrdinalIgnoreCase)
+                         || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase))
+                {
+                    _videoFilePath ??= file;
+                }
+            }
+        }
+        catch
+        {
+            // Best effort: an unreadable folder just means no extra path.
+        }
+
+        _thumbnailUrl ??= string.IsNullOrEmpty(Id) ? null : $"https://i.ytimg.com/vi/{Id}/mqdefault.jpg";
+
+        var primary = PathFor(Kind);
+        if (!string.IsNullOrEmpty(primary))
+        {
+            _filePath = primary;
+        }
+    }
+
+    /// <summary>
+    /// Records the file for one format and keeps <see cref="FilePath"/> pointed at the
+    /// primary format's file. Raises every computed property that depends on availability.
+    /// </summary>
+    public void SetPath(MediaKind kind, string? path)
+        => SetPath(kind, path, kind == MediaKind.Audio ? nameof(AudioFilePath) : nameof(VideoFilePath));
+
+    private void SetPath(MediaKind kind, string? path, string propertyName)
+    {
+        path = string.IsNullOrWhiteSpace(path) ? null : path;
+        var changed = kind == MediaKind.Audio
+            ? Set(ref _audioFilePath, path, propertyName)
+            : Set(ref _videoFilePath, path, propertyName);
+
+        if (kind == Kind)
+        {
+            Set(ref _filePath, path, nameof(FilePath));
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasAudioFile));
+        OnPropertyChanged(nameof(HasVideoFile));
+        OnPropertyChanged(nameof(HasAnyFile));
+        OnPropertyChanged(nameof(HasAudio));
+        OnPropertyChanged(nameof(HasVideo));
+        OnPropertyChanged(nameof(PreferredKind));
+        OnPropertyChanged(nameof(CanPlay));
+        OnPropertyChanged(nameof(KindLabel));
     }
 
     public DateTimeOffset AddedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -170,14 +387,27 @@ public sealed class LibraryItem : INotifyPropertyChanged
     public bool IsDownloading => Status == ItemStatus.Downloading;
     public bool IsComplete => Status == ItemStatus.Complete;
     public bool IsFailed => Status == ItemStatus.Failed;
-    public bool CanPlay => Status == ItemStatus.Complete && !string.IsNullOrEmpty(FilePath) && File.Exists(FilePath);
+    public bool CanPlay => HasAnyFile;
     public bool IsIndeterminate => Status == ItemStatus.Downloading && (Percent == null || Percent <= 0);
 #if WINDOWS || HAS_UNO
     public Microsoft.UI.Xaml.Visibility ProgressVisibility => Status == ItemStatus.Downloading ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 #endif
     public string PercentFormatted => $"{(Percent ?? 0):0}%";
 
-    public string KindLabel => Kind == MediaKind.Audio ? "MP3" : "MP4";
+    /// <summary>Which formats this item currently has (or is downloading): "MP3", "MP4" or "MP3 · MP4".</summary>
+    public string KindLabel
+    {
+        get
+        {
+            var audio = HasAudioFile || (Kind == MediaKind.Audio && !HasVideoFile);
+            var video = HasVideoFile || (Kind == MediaKind.Video && !HasAudioFile);
+            if (audio && video)
+            {
+                return "MP3 · MP4";
+            }
+            return audio ? "MP3" : "MP4";
+        }
+    }
 
     /// <summary>Segoe MDL2 glyph for the item kind, used by list rows.</summary>
     public string IconGlyph => Kind == MediaKind.Audio ? "\uE8D6" : "\uE714";

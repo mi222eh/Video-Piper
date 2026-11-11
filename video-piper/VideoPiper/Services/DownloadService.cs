@@ -65,6 +65,20 @@ public sealed class DownloadService : IDownloadService
         return preferred + baseBranch;
     }
 
+    /// <summary>
+    /// Builds the yt-dlp format string for streaming over local HLS. Prefers H.264 video
+    /// (MPEG-TS/HLS compatible, and copyable without a live re-encode) and AAC audio at or
+    /// below the chosen height, falling back to any stream when the source lacks them.
+    /// </summary>
+    public static string BuildStreamFormat(int maxHeight, int minFps)
+    {
+        var h264 = $"bestvideo[height<={maxHeight}][vcodec^=avc1]";
+        var fps = minFps > 0 ? $"[fps>={minFps}]" : string.Empty;
+        return $"bestvideo[height<={maxHeight}][vcodec^=avc1]{fps}+bestaudio[acodec^=mp4a]/" +
+               $"{h264}+bestaudio/" +
+               $"best[height<={maxHeight}]/best";
+    }
+
     private static readonly Regex ProgressRegex = new(
         @"\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+/s)\s+ETA\s+([\d:]+)",
         RegexOptions.Compiled);

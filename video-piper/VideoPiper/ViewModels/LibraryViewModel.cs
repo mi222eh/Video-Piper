@@ -42,10 +42,13 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     private SearchResult? _selectedSearchResult;
     private bool _isSearchingDetail;
     private string? _selectedSearchDetailError;
-    private bool _selectedSearchResultInLibrary;
+    private bool _searchAudioOffline;
+    private bool _searchVideoOffline;
     private CancellationTokenSource? _detailCts;
     private RelayCommand _searchResultAudioCommand;
     private RelayCommand _searchResultVideoCommand;
+    private readonly RelayCommand _playSearchResultCommand;
+    private readonly RelayCommand _streamSearchResultCommand;
 
     public LibrarySidebarSection ActiveSection
     {
@@ -67,6 +70,8 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsFailedActive));
                 OnPropertyChanged(nameof(IsSearchActive));
                 OnPropertyChanged(nameof(IsCollectionActive));
+                OnPropertyChanged(nameof(ShowSearchBrowser));
+                OnPropertyChanged(nameof(ShowLocalSearch));
                 OnPropertyChanged(nameof(SectionTitle));
                 OnPropertyChanged(nameof(EmptyStateTitle));
                 OnPropertyChanged(nameof(EmptyStateHint));
@@ -83,6 +88,9 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     public bool IsFailedActive => _activeSection == LibrarySidebarSection.FailedOnly;
     public bool IsSearchActive => _activeSection == LibrarySidebarSection.YouTubeSearch;
     public bool IsCollectionActive => _activeSection != LibrarySidebarSection.YouTubeSearch;
+
+    /// <summary>The search list/help area is visible unless a media page is open on top.</summary>
+    public bool ShowSearchBrowser => IsSearchActive && !HasSelectedSearchResult;
 
     public string SectionTitle => _activeSection switch
     {
@@ -114,6 +122,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
                 HasSearchResults = false;
                 SearchResults.Clear();
                 SelectedSearchResult = null;
+                RefreshLocalSearch(string.Empty);
                 Url = trimmed;
                 IsUrlInput = true;
                 return;
@@ -129,11 +138,12 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             HasSearchResults = false;
             SearchResults.Clear();
             SelectedSearchResult = null;
+            RefreshLocalSearch(trimmed);
 
             // The query box is a search box — as soon as there is a real query the
             // main area shows the search section, so Sök/Enter results never land
             // behind the collection list ("ghost search").
-            if (trimmed.Length >= 2)
+            if (trimmed.Length >= 1)
             {
                 ActiveSection = LibrarySidebarSection.YouTubeSearch;
             }
@@ -197,8 +207,22 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     public bool IsFailedFilterSelected => _filterIndex == 3;
 
     public int TotalCount => Items.Count;
-    public int AudioCount => Items.Count(i => i.Kind == MediaKind.Audio);
-    public int VideoCount => Items.Count(i => i.Kind == MediaKind.Video);
+    public int AudioCount => Items.Count(i => i.HasAudio);
+    public int VideoCount => Items.Count(i => i.HasVideo);
+
+    /// <summary>Raised whenever any sidebar count changes — the count badges re-evaluate on it.</summary>
+    public int SidebarCountsVersion { get; private set; }
+
+    private void RefreshCounts()
+    {
+        FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
+        SidebarCountsVersion++;
+        OnPropertyChanged(nameof(SidebarCountsVersion));
+        OnPropertyChanged(nameof(TotalCount));
+        OnPropertyChanged(nameof(AudioCount));
+        OnPropertyChanged(nameof(VideoCount));
+        OnPropertyChanged(nameof(SectionTitle));
+    }
 
     /// <summary>List sorting: 0 = Nyast, 1 = Titel, 2 = Längd.</summary>
     public int SortIndex
@@ -321,8 +345,51 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>The search result whose info page is open (or null). Selecting one never
-    /// downloads — the info page's buttons do.</summary>
+    /// <summary>Local (offline) matches for the current search box text — shown instantly,
+    /// before any YouTube request runs.</summary>
+    public ObservableCollection<LibraryItem> LocalSearchResults { get; } = new();
+
+    public bool HasLocalMatches => LocalSearchResults.Count > 0;
+    public string LocalMatchesHeader => $"I ditt bibliotek ({LocalSearchResults.Count})";
+    public bool ShowLocalSearch => IsSearchActive && HasLocalMatches;
+
+    /// <summary>Matching is offline: title, uploader, playlist and video id.</summary>
+    private static bool MatchesLocalQuery(LibraryItem item, string query) =>
+        item.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || (item.Uploader?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (item.Playlist?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (item.Id?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private void RefreshLocalSearch(string? query = null)
+    {
+        query ??= _searchQuery;
+        OnUi(() =>
+        {
+            LocalSearchResults.Clear();
+            var trimmed = query.Trim();
+            if (trimmed.Length > 0 && !IsYouTubeUrl(trimmed))
+            {
+                foreach (var item in Items.Where(i => MatchesLocalQuery(i, trimmed)).Take(50))
+                {
+                    LocalSearchResults.Add(item);
+                }
+            }
+
+            OnPropertyChanged(nameof(HasLocalMatches));
+            OnPropertyChanged(nameof(LocalMatchesHeader));
+            OnPropertyChanged(nameof(ShowLocalSearch));
+        });
+    }
+
+    /// <summary>Opens a local search match in the collection list and loads it into the player.</summary>
+    public void OpenLibraryItem(LibraryItem item)
+    {
+        ActiveSection = LibrarySidebarSection.AllMedia;
+        RefreshFilteredItems();
+        SelectedItem = item;
+    }
+
+
     public SearchResult? SelectedSearchResult
     {
         get => _selectedSearchResult;
@@ -335,11 +402,16 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
             Set(ref _selectedSearchResult, value);
             OnPropertyChanged(nameof(HasSelectedSearchResult));
+            OnPropertyChanged(nameof(ShowSearchBrowser));
             OnPropertyChanged(nameof(ShowSearchList));
             OnPropertyChanged(nameof(ShowNoResults));
-            OnPropertyChanged(nameof(CanDownloadSearchResult));
+            OnPropertyChanged(nameof(CanDownloadSearchAudio));
+            OnPropertyChanged(nameof(CanDownloadSearchVideo));
+            OnPropertyChanged(nameof(CanPlaySearchResult));
+            OnPropertyChanged(nameof(CanStreamSearchResult));
             OnPropertyChanged(nameof(SearchDetailHint));
             RefreshSearchResultCommands();
+            SyncSearchOfflineState();
 
             // Reset the per-result detail state, then enrich with the full metadata
             // (description) in the background. The download buttons work regardless —
@@ -382,30 +454,83 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         private set => Set(ref _selectedSearchDetailError, value);
     }
 
-    /// <summary>True when the selected search result is already in the library.</summary>
-    public bool SelectedSearchResultInLibrary => _selectedSearchResultInLibrary;
+    /// <summary>True when an offline MP3 for the open search result exists.</summary>
+    public bool SearchAudioOffline => _searchAudioOffline;
 
-    /// <summary>Gate for the info page's download buttons.</summary>
-    public bool CanDownloadSearchResult =>
+    /// <summary>True when an offline MP4 for the open search result exists.</summary>
+    public bool SearchVideoOffline => _searchVideoOffline;
+
+    /// <summary>Gate for the info page's two download buttons (either format still missing).</summary>
+    public bool CanDownloadSearchAudio =>
         _selectedSearchResult is not null
-        && !IsDownloading
         && !IsBusy
         && IsRootSet
-        && !_selectedSearchResultInLibrary;
+        && !_searchAudioOffline
+        && !QueueEntries.Any(e => e.Id == _selectedSearchResult.Id
+                                  && e.Kind == MediaKind.Audio
+                                  && e.Status is ItemStatus.Queued or ItemStatus.Downloading);
 
-    /// <summary>"Ladda ner ljud" action on the search info page.</summary>
+    public bool CanDownloadSearchVideo =>
+        _selectedSearchResult is not null
+        && !IsBusy
+        && IsRootSet
+        && !_searchVideoOffline
+        && _selectedSearchResult.HasVideo != false
+        && !QueueEntries.Any(e => e.Id == _selectedSearchResult.Id
+                                  && e.Kind == MediaKind.Video
+                                  && e.Status is ItemStatus.Queued or ItemStatus.Downloading);
+
+    /// <summary>"Spela" works without a library folder — it streams when nothing is offline.</summary>
+    public bool CanPlaySearchResult => _selectedSearchResult is not null;
+
+    public bool CanStreamSearchResult => _selectedSearchResult is not null && CanStream;
+
+    /// <summary>"Ladda ner ljud" action on the media page.</summary>
     public ICommand DownloadSearchResultAudioCommand => _searchResultAudioCommand;
 
-    /// <summary>"Ladda ner video" action on the search info page.</summary>
+    /// <summary>"Ladda ner video" action on the media page.</summary>
     public ICommand DownloadSearchResultVideoCommand => _searchResultVideoCommand;
 
-    /// <summary>Re-queries the two info-page download buttons so their enabled state
-    /// tracks <see cref="CanDownloadSearchResult"/> (WinUI only re-queries on
-    /// CanExecuteChanged). Call from every setter that can change the gate.</summary>
+    /// <summary>"Spela" action on the media page (offline-first, streams otherwise).</summary>
+    public ICommand PlaySearchResultCommand => _playSearchResultCommand;
+
+    /// <summary>"Strömma" action on the media page (forces the online relay).</summary>
+    public ICommand StreamSearchResultCommand => _streamSearchResultCommand;
+
+    /// <summary>
+    /// Re-reads which formats of the open search result are already on disk. Called when
+    /// the selection changes and whenever a library item changes state.
+    /// </summary>
+    private void SyncSearchOfflineState()
+    {
+        var result = _selectedSearchResult;
+        var item = result is null ? null : Items.FirstOrDefault(i => i.Id == result.Id);
+        var audio = item?.HasAudioFile == true;
+        var video = item?.HasVideoFile == true;
+        if (audio == _searchAudioOffline && video == _searchVideoOffline)
+        {
+            return;
+        }
+
+        _searchAudioOffline = audio;
+        _searchVideoOffline = video;
+        OnPropertyChanged(nameof(SearchAudioOffline));
+        OnPropertyChanged(nameof(SearchVideoOffline));
+        OnPropertyChanged(nameof(CanDownloadSearchAudio));
+        OnPropertyChanged(nameof(CanDownloadSearchVideo));
+        OnPropertyChanged(nameof(SearchDetailHint));
+        RefreshSearchResultCommands();
+    }
+
+    /// <summary>Re-queries the info-page buttons so their enabled state tracks the gates
+    /// (WinUI only re-queries on CanExecuteChanged). Call from every setter that can change
+    /// a gate.</summary>
     private void RefreshSearchResultCommands()
     {
         _searchResultAudioCommand?.RefreshCanExecute();
         _searchResultVideoCommand?.RefreshCanExecute();
+        _playSearchResultCommand?.RefreshCanExecute();
+        _streamSearchResultCommand?.RefreshCanExecute();
     }
 
     private async Task FetchSearchDetailAsync(SearchResult result)
@@ -433,6 +558,8 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
                 }
                 _selectedSearchResult = result with { Description = description, HasVideo = hasVideo };
                 OnPropertyChanged(nameof(SelectedSearchResult));
+                OnPropertyChanged(nameof(CanDownloadSearchVideo));
+                RefreshSearchResultCommands();
                 IsSearchingDetail = false;
             });
         }
@@ -470,8 +597,10 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             DurationSeconds: target.DurationSeconds,
             Url: $"https://www.youtube.com/watch?v={target.Id}");
 
-        // Skip items that are already in the library (complete, downloading, or queued).
-        if (Items.Any(i => i.Id == entry.Id) || _downloadQueue.Any(q => q.Entry.Id == entry.Id))
+        // Skip a format that is already offline or already queued for this video.
+        if (Items.Any(i => i.Id == entry.Id && (kind == MediaKind.Audio ? i.HasAudioFile : i.HasVideoFile))
+            || QueueEntries.Any(q => q.Id == entry.Id && q.Kind == kind
+                                     && q.Status is ItemStatus.Queued or ItemStatus.Downloading))
         {
             return Task.CompletedTask;
         }
@@ -498,13 +627,17 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
             Set(ref _selectedItem, value);
             OnPropertyChanged(nameof(IsItemSelected));
-            // A new selection loads the item into the player (no auto-play); the
-            // transport controls' play button (or "Spela") starts playback.
-            PlayingItem = value;
-            // If the file is gone, drop it from the player so the "download it"
-            // prompt shows instead of the video.
             UpdateSelectedFileMissing();
+
+            // A new selection loads its preferred offline format into the player (no
+            // auto-play). Failed/queued rows don't replace the current player.
+            if (value is { Status: ItemStatus.Complete } && value.HasAnyFile)
+            {
+                LoadItemIntoPlayer(value, value.PreferredKind, play: false);
+            }
+
             _playSelectedCommand.RefreshCanExecute();
+            _streamSelectedCommand.RefreshCanExecute();
             _openFolderSelectedCommand.RefreshCanExecute();
             _deleteSelectedCommand.RefreshCanExecute();
             _downloadSelectedCommand.RefreshCanExecute();
@@ -513,8 +646,8 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
     private bool _selectedFileMissing;
 
-    /// <summary>True when the selected item is complete but its file is missing from disk — the
-    /// player area shows a "download it" prompt instead of the video.</summary>
+    /// <summary>True when the selected item is complete but none of its files exist on disk —
+    /// the player area shows a "download or stream it" prompt instead of the video.</summary>
     public bool SelectedFileMissing
     {
         get => _selectedFileMissing;
@@ -522,11 +655,19 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         {
             if (Set(ref _selectedFileMissing, value))
             {
-                // A missing file can't play — clear the player so the "download
-                // it" prompt shows. When the file comes back (re-download),
-                // load the selected item into the player again (no auto-play).
-                PlayingItem = value ? null : _selectedItem;
+                if (value)
+                {
+                    // A missing file can't play — clear the player so the prompt shows.
+                    ClearPlayerCore();
+                }
+                else if (_selectedItem is { } item && item.HasAnyFile)
+                {
+                    // The file came back (re-download): reload it without auto-play.
+                    LoadItemIntoPlayer(item, item.PreferredKind, play: false);
+                }
+
                 OnPropertyChanged(nameof(IsPlayerVisible));
+                OnPropertyChanged(nameof(ShowMissingPrompt));
             }
         }
     }
@@ -534,9 +675,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     private void UpdateSelectedFileMissing()
     {
         var item = _selectedItem;
-        var missing = item is { Status: ItemStatus.Complete }
-                      && (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath));
-        SelectedFileMissing = missing;
+        SelectedFileMissing = item is { Status: ItemStatus.Complete } && !item.HasAnyFile;
     }
     public bool IsItemSelected => _selectedItem is not null;
     public bool HasItems => Items.Count > 0;
@@ -587,15 +726,34 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     /// <summary>Hint under the search row: a URL is ready but no library folder is chosen yet.</summary>
     public bool ShowNoRootHint => IsUrlInput && !IsRootSet;
 
-    /// <summary>Explanation line on the search info page — also explains why its download
-    /// buttons stay disabled until a library folder is chosen.</summary>
-    public string SearchDetailHint => _selectedSearchResult is null
-        ? string.Empty
-        : !IsRootSet
-            ? "Välj en biblioteksmapp först — nedladdningar sparas i den mapp du väljer."
-            : _selectedSearchResultInLibrary
-                ? "Den här videon finns redan i biblioteket."
-                : "Välj format för nedladdningen — den sparas i ditt bibliotek.";
+    /// <summary>Explanation line on the media page: what is offline and what the buttons do.</summary>
+    public string SearchDetailHint
+    {
+        get
+        {
+            if (_selectedSearchResult is null)
+            {
+                return string.Empty;
+            }
+            if (!IsRootSet)
+            {
+                return "Välj en biblioteksmapp för att kunna ladda ner. Du kan fortfarande strömma direkt.";
+            }
+            if (_searchAudioOffline && _searchVideoOffline)
+            {
+                return "Både MP3 och MP4 finns offline — Spela använder den lokala filen.";
+            }
+            if (_searchAudioOffline)
+            {
+                return "MP3 finns offline. Välj MP4 för att strömma eller ladda ner videon.";
+            }
+            if (_searchVideoOffline)
+            {
+                return "MP4 finns offline. Ladda ner ljudet om du vill ha MP3 också.";
+            }
+            return "Strömma direkt, eller ladda ner ljud/video till biblioteket.";
+        }
+    }
 
     public string Url
     {
@@ -642,39 +800,343 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             return Task.CompletedTask;
         }
 
-        if (string.IsNullOrEmpty(item.FilePath) || !File.Exists(item.FilePath))
+        if (item.Status != ItemStatus.Complete)
         {
-            Error = $"Filen hittades inte på disk: {item.Title}";
+            Error = "Objektet är inte nedladdat ännu.";
             return Task.CompletedTask;
         }
 
-        // Selecting an item only loads it into the player (no auto-play); the play
-        // button here starts playback explicitly.
-        PlayingItem = item;
-        Error = null;
-        UpdateSelectedFileMissing();
+        if (!item.HasAnyFile)
+        {
+            // The prompt offers download and streaming; don't load an empty player.
+            SelectedFileMissing = true;
+            return Task.CompletedTask;
+        }
+
+        LoadItemIntoPlayer(item, item.PreferredKind, play: true);
         return Task.CompletedTask;
     }
 
-    private async Task PlaySelectedAsync()
+    private Task PlaySelectedAsync() => PlayItemAsync(SelectedItem);
+
+    /// <summary>Loads a library item's chosen format, streaming when that file is not on disk.</summary>
+    private void LoadItemIntoPlayer(LibraryItem item, MediaKind kind, bool play)
     {
-        await PlayItemAsync(SelectedItem);
+        SetPlayerCore(item.Title, BuildItemSubtitle(item), item.Id, kind);
+        PlayingItem = item;
+        item.LastPlayedKind = kind;
+        _ = _store.SaveAsync();
+
+        var path = item.PathFor(kind);
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
+        {
+            SetPlayerSource(path, isStream: false);
+            if (play)
+            {
+                PlaybackRequested?.Invoke();
+            }
+            return;
+        }
+
+        if (!CanStream)
+        {
+            PlayerStreamError = "Strömning stöds endast på Windows. Ladda ner filen för att spela den.";
+            return;
+        }
+
+        _ = StartStreamAsync(item.Id, kind, play);
+    }
+
+    private static string? BuildItemSubtitle(LibraryItem item)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(item.Uploader))
+        {
+            parts.Add(item.Uploader);
+        }
+        if (!string.IsNullOrEmpty(item.Playlist))
+        {
+            parts.Add(item.Playlist);
+        }
+        if (item.DurationSeconds is > 0)
+        {
+            parts.Add(item.DurationFormatted);
+        }
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// Plays a YouTube result: its offline copy when one exists for the chosen format,
+    /// otherwise the online HLS relay. Never requires a library folder.
+    /// </summary>
+    public Task PlaySearchResultAsync(SearchResult? result = null, MediaKind? kind = null)
+    {
+        var target = result ?? SelectedSearchResult;
+        if (target is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var offline = Items.FirstOrDefault(i => i.Id == target.Id);
+        var chosen = kind
+                     ?? (offline is not null
+                         ? offline.PreferredKind
+                         : target.HasVideo == false ? MediaKind.Audio : MediaKind.Video);
+        LoadSearchResultIntoPlayer(target, offline, chosen, play: true, forceStream: false);
+        return Task.CompletedTask;
+    }
+
+    private Task PlaySelectedSearchResultAsync() => PlaySearchResultAsync(SelectedSearchResult);
+
+    /// <summary>Forces online playback (e.g. the user has only the MP3 and wants the video).</summary>
+    private Task StreamSelectedSearchResultAsync()
+    {
+        var result = SelectedSearchResult;
+        if (result is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var offline = Items.FirstOrDefault(i => i.Id == result.Id);
+        var kind = result.HasVideo == false ? MediaKind.Audio : MediaKind.Video;
+        LoadSearchResultIntoPlayer(result, offline, kind, play: true, forceStream: true);
+        return Task.CompletedTask;
+    }
+
+    private void LoadSearchResultIntoPlayer(
+        SearchResult result,
+        LibraryItem? offline,
+        MediaKind kind,
+        bool play,
+        bool forceStream)
+    {
+        SetPlayerCore(result.Title, result.DetailText, result.Id, kind);
+        PlayingItem = offline;
+        if (offline is not null)
+        {
+            offline.LastPlayedKind = kind;
+            _ = _store.SaveAsync();
+        }
+
+        var path = offline?.PathFor(kind);
+        if (!forceStream && !string.IsNullOrEmpty(path) && File.Exists(path))
+        {
+            SetPlayerSource(path, isStream: false);
+            if (play)
+            {
+                PlaybackRequested?.Invoke();
+            }
+            return;
+        }
+
+        if (!CanStream)
+        {
+            PlayerStreamError = "Strömning stöds endast på Windows.";
+            return;
+        }
+
+        _ = StartStreamAsync(result.Id, kind, play);
+    }
+
+    /// <summary>Streams the selected library item (used by the missing-file prompt).</summary>
+    private Task StreamSelectedAsync()
+    {
+        var item = SelectedItem;
+        if (item is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var kind = item.Kind == MediaKind.Video && !item.HasAudioFile
+            ? MediaKind.Video
+            : item.HasVideoFile || item.Kind == MediaKind.Video ? MediaKind.Video : MediaKind.Audio;
+
+        SetPlayerCore(item.Title, BuildItemSubtitle(item), item.Id, kind);
+        PlayingItem = item;
+
+        if (!CanStream)
+        {
+            PlayerStreamError = "Strömning stöds endast på Windows.";
+            return Task.CompletedTask;
+        }
+
+        _ = StartStreamAsync(item.Id, kind, playWhenReady: true);
+        return Task.CompletedTask;
+    }
+
+    private Task RetryStreamAsync()
+    {
+        if (PlayerVideoId is { } id)
+        {
+            _ = StartStreamAsync(id, PlayerKind, playWhenReady: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Switches the player between MP3 and MP4, streaming when that file is not offline.</summary>
+    public Task SetPlayerKindAsync(MediaKind kind) => SwitchPlayerKindAsync(kind);
+
+    /// <summary>Switches the player between MP3 and MP4, streaming when that file is not offline.</summary>
+    private async Task SwitchPlayerKindAsync(MediaKind kind)
+    {
+        if (PlayerVideoId is not { } id)
+        {
+            return;
+        }
+
+        PlayerKind = kind;
+        if (PlayingItem is { } item)
+        {
+            item.LastPlayedKind = kind;
+            await _store.SaveAsync();
+
+            var path = item.PathFor(kind);
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                StopStreaming();
+                SetPlayerSource(path, isStream: false);
+                PlayerStreamError = null;
+                PlaybackRequested?.Invoke();
+                return;
+            }
+        }
+
+        await StartStreamAsync(id, kind, playWhenReady: true);
+    }
+
+    private async Task StartStreamAsync(string videoId, MediaKind kind, bool playWhenReady)
+    {
+        if (!CanStream)
+        {
+            PlayerStreamError = "Strömning stöds endast på Windows.";
+            return;
+        }
+
+        _streamCts?.Cancel();
+        _streamCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _streamCts = cts;
+
+        PlayerKind = kind;
+        PlayerStreamError = null;
+        PlayerSourceUri = null;
+        PlayerIsStream = true;
+        PlayerIsStreamLoading = true;
+        PlayerStreamStatus = kind == MediaKind.Video ? "Buffrar video..." : "Buffrar ljud...";
+
+        try
+        {
+            var uri = await _streamService.StartAsync(videoId, kind, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            // StartAsync resolves yt-dlp/ffmpeg on background continuations. Every bound
+            // field and command refresh must run on the UI thread or WinUI throws
+            // E_ACCESSDENIED (a stowed XAML exception kills the app).
+            OnUi(() =>
+            {
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                PlayerSourceUri = uri.ToString();
+                PlayerIsStreamLoading = false;
+                PlayerStreamStatus = null;
+                if (playWhenReady)
+                {
+                    PlaybackRequested?.Invoke();
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Replaced by another selection/format.
+        }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                OnUi(() =>
+                {
+                    PlayerIsStreamLoading = false;
+                    PlayerStreamStatus = null;
+                    PlayerIsStream = false;
+                    PlayerStreamError = UiErrors.FromException(ex, "Kunde inte strömma videon.");
+                });
+            }
+        }
+    }
+
+    /// <summary>Resets the player header/source fields without touching the selection.</summary>
+    private void SetPlayerCore(string title, string? subtitle, string? videoId, MediaKind kind)
+    {
+        StopStreaming();
+        PlayerTitle = title;
+        PlayerSubtitle = subtitle;
+        PlayerVideoId = videoId;
+        PlayerKind = kind;
+        PlayerStreamError = null;
+        PlayerStreamStatus = null;
+        PlayerIsStreamLoading = false;
+    }
+
+    private void SetPlayerSource(string uri, bool isStream)
+    {
+        PlayerSourceUri = uri;
+        PlayerIsStream = isStream;
+    }
+
+    /// <summary>Cancels the stream request and stops the relay; safe to call repeatedly.</summary>
+    private void StopStreaming()
+    {
+        if (_streamCts is { } cts)
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+                // Already disposed.
+            }
+            cts.Dispose();
+            _streamCts = null;
+        }
+
+        _ = _streamService.StopAsync();
+        PlayerIsStreamLoading = false;
+        PlayerStreamStatus = null;
+        PlayerIsStream = false;
+        PlayerSourceUri = null;
+    }
+
+    /// <summary>Clears the player (title, source and stream) but leaves the selection intact.</summary>
+    private void ClearPlayerCore()
+    {
+        StopStreaming();
+        PlayingItem = null;
+        PlayerTitle = null;
+        PlayerSubtitle = null;
+        PlayerVideoId = null;
+        PlayerStreamError = null;
     }
 
     /// <summary>
     /// Re-downloads the selected item into the library (used by the player's "file
-    /// saknas" prompt) in the format it was originally saved as. Queues the item in
-    /// the download worker like any other.
+    /// saknas" prompt) in its preferred format. Queues the item in the download worker.
     /// </summary>
     private Task DownloadSelectedAsync()
     {
-        return DownloadSelectedAsAsync(SelectedItem?.Kind ?? Kind);
+        return DownloadSelectedAsAsync(SelectedItem?.PreferredKind ?? Kind);
     }
 
     /// <summary>
     /// Queues the selected item for download in a specific format (MP3 or MP4),
-    /// overriding the global format toggle. The item's kind is updated so the list
-    /// badge matches the new target file.
+    /// overriding the global format toggle. The item keeps both files it already has;
+    /// the download adds or replaces only the chosen format.
     /// </summary>
     public Task DownloadSelectedAsAsync(MediaKind kind)
     {
@@ -684,7 +1146,6 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             return Task.CompletedTask;
         }
 
-        item.Kind = kind;
         _isRetryingFailed = true;
         EnqueueEntries(new[]
         {
@@ -715,17 +1176,20 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         if (PreferencesService.GetDeleteMode() == DeleteMode.DeleteFiles)
         {
             _store.DeleteMediaFiles(target);
-            _store.DeleteEmptyFolders(Path.GetDirectoryName(target.FilePath));
+            var folder = new[] { target.VideoFilePath, target.AudioFilePath, target.FilePath }
+                .Select(Path.GetDirectoryName)
+                .FirstOrDefault(dir => !string.IsNullOrEmpty(dir));
+            _store.DeleteEmptyFolders(folder);
         }
 
         Log.For(typeof(LibraryViewModel)).LogInformation(
-            "Tog bort {ItemId} {Title} (fil: {Path}, läge: {Mode})",
-            item.Id, item.Title, item.FilePath, PreferencesService.GetDeleteMode());
+            "Tog bort {ItemId} {Title} (MP3: {Audio}, MP4: {Video}, läge: {Mode})",
+            item.Id, item.Title, item.AudioFilePath, item.VideoFilePath, PreferencesService.GetDeleteMode());
         await _store.SaveAsync();
 
         if (ReferenceEquals(PlayingItem, item))
         {
-            PlayingItem = null;
+            ClosePlayer();
         }
         SelectedItem = null;
         RefreshItems();
@@ -793,45 +1257,33 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
             || previous.Title != item.Title
             || previous.Uploader != item.Uploader
             || previous.Playlist != item.Playlist
-            || previous.DurationSeconds != item.DurationSeconds;
+            || previous.DurationSeconds != item.DurationSeconds
+            || previous.AudioFilePath != item.AudioFilePath
+            || previous.VideoFilePath != item.VideoFilePath
+            || previous.ThumbnailUri != item.ThumbnailUri;
 
         if (affectsList)
         {
-            FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
+            RefreshCounts();
             RefreshFilteredItems();
-            OnPropertyChanged(nameof(TotalCount));
-            OnPropertyChanged(nameof(AudioCount));
-            OnPropertyChanged(nameof(VideoCount));
-            // The header title embeds the active section's count — it must track the counts
-            // or it sits stale until the user switches sections.
-            OnPropertyChanged(nameof(SectionTitle));
+            RefreshLocalSearch();
         }
-
         UpdateSelectedFileMissing();
 
-        SyncSelectedSearchResultInLibrary(item.Id, item.Status);
+        SyncSelectedSearchResultInLibrary(item.Id);
     }
 
-    /// <summary>If <paramref name="id"/> is the result on the open info page, update the
-    /// "already in library" flag so the page's download buttons disable once the download
-    /// has registered in the library. Call on the UI thread.</summary>
-    private void SyncSelectedSearchResultInLibrary(string id, ItemStatus status)
+    /// <summary>If <paramref name="id"/> is the result on the open media page, refresh which
+    /// of its formats are already offline (the page updates its badges and buttons).
+    /// Call on the UI thread.</summary>
+    private void SyncSelectedSearchResultInLibrary(string id)
     {
         if (_selectedSearchResult is null || _selectedSearchResult.Id != id)
         {
             return;
         }
 
-        var inLibrary = status != ItemStatus.Queued && status != ItemStatus.Downloading;
-        if (inLibrary != _selectedSearchResultInLibrary)
-        {
-            _selectedSearchResultInLibrary = inLibrary;
-            OnPropertyChanged(nameof(SelectedSearchResultInLibrary));
-            OnPropertyChanged(nameof(CanDownloadSearchResult));
-            OnPropertyChanged(nameof(SearchDetailHint));
-            OnPropertyChanged(nameof(SelectedSearchResult));
-            RefreshSearchResultCommands();
-        }
+        SyncSearchOfflineState();
     }
 
     private async Task PasteAsync()
@@ -852,16 +1304,16 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
     private void ClosePlayer()
     {
-        // Clear the item first (stops the docked player's source) so the pop-out close
-        // does not briefly resume playback that is about to be torn down.
-        PlayingItem = null;
+        // Clear the source first (stops the docked player) so closing the pop-out
+        // cannot briefly resume playback that is about to be torn down.
+        ClearPlayerCore();
 #if WINDOWS
         ClosePopOutWindow();
 #endif
     }
 
     /// <summary>
-    /// Opens the pop-out player window for the current item (created on the UI
+    /// Opens the pop-out player window for the current source (created on the UI
     /// thread). While it is open, the docked player is hidden via
     /// <see cref="PlayerIsPopOut"/>; closing the window restores the dock.
     /// No-op on non-Windows (Skia) targets, where pop-out is not available.
@@ -869,13 +1321,15 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
     private void PopOutPlayer()
     {
 #if WINDOWS
-        var item = PlayingItem;
-        if (item is null || _playerPopOutOpen)
+        var title = PlayerTitle;
+        var source = PlayerSourceUri;
+        if (title is null || source is null || _playerPopOutOpen)
         {
             return;
         }
 
-        var window = new PlayerPopOutWindow(item);
+        var isVideo = PlayerKind == MediaKind.Video;
+        var window = new PlayerPopOutWindow(title, source);
         window.ClosedChanged += OnPopOutWindowClosed;
         _popOutWindow = window;
         _playerPopOutOpen = true;
@@ -883,7 +1337,7 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDockedPlayerVisible));
         _popOutPlayerCommand.RefreshCanExecute();
         window.Activate();
-        window.Configure(item.Kind == MediaKind.Video ? 860 : 520, item.Kind == MediaKind.Video ? 560 : 160);
+        window.Configure(isVideo ? 860 : 520, isVideo ? 560 : 160);
 #endif
     }
 #if WINDOWS
@@ -925,8 +1379,9 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
 
     public Task OpenFolderItem(LibraryItem? item)
     {
-        var target = item?.FilePath;
-        if (!string.IsNullOrEmpty(target) && File.Exists(target))
+        var target = new[] { item?.VideoFilePath, item?.AudioFilePath, item?.FilePath }
+            .FirstOrDefault(path => !string.IsNullOrEmpty(path) && File.Exists(path));
+        if (!string.IsNullOrEmpty(target))
         {
             try
             {
@@ -981,7 +1436,9 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
                 Items.Add(item);
             }
             FailedCount = Items.Count(i => i.Status == ItemStatus.Failed);
+            RefreshCounts();
             RefreshFilteredItems();
+            RefreshLocalSearch();
             UpdateSelectedFileMissing();
             OnPropertyChanged(nameof(HasItems));
             OnPropertyChanged(nameof(TotalCount));
@@ -1040,11 +1497,11 @@ public sealed partial class LibraryViewModel : INotifyPropertyChanged
         var candidates = new List<LibraryItem>();
         foreach (var item in Items)
         {
-            if (FilterIndex == 1 && item.Kind != MediaKind.Audio)
+            if (FilterIndex == 1 && !item.HasAudio)
             {
                 continue;
             }
-            if (FilterIndex == 2 && item.Kind != MediaKind.Video)
+            if (FilterIndex == 2 && !item.HasVideo)
             {
                 continue;
             }

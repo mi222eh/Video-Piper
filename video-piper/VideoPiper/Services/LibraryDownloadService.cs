@@ -87,17 +87,23 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var item = new LibraryItem
+        // One row per video: a re-download (or the other format) must update the existing
+        // item so the format already on disk is never forgotten.
+        var item = store.Items.FirstOrDefault(i => i.Id == entry.Id);
+        if (item is null)
         {
-            Id = entry.Id,
-            Title = entry.Title,
-            Uploader = entry.Uploader,
-            Playlist = playlistTitle,
-            Kind = kind,
-            Status = ItemStatus.Downloading,
-            Percent = 0,
-            DurationSeconds = entry.DurationSeconds,
-        };
+            item = new LibraryItem { Id = entry.Id, AddedUtc = DateTimeOffset.UtcNow };
+        }
+        item.Title = entry.Title;
+        item.Uploader = entry.Uploader;
+        item.Playlist = playlistTitle;
+        item.Kind = kind;
+        item.Status = ItemStatus.Downloading;
+        item.Percent = 0;
+        item.DurationSeconds = entry.DurationSeconds;
+        item.Error = null;
+        item.CompletedUtc = null;
+        item.ThumbnailUrl ??= ThumbnailCache.UrlFor(entry.Id);
 
         store.AddOrUpdate(item);
         await store.SaveAsync();
@@ -164,17 +170,34 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
             if (videoOnlySucceeded && reuseMp3 is not null)
             {
                 onLine?.Invoke("Kopplar ihop videodelen med den sparade MP3-filen...");
-                await MergeVideoWithMp3Async(ffmpegPath!, folder, entry.Id, reuseMp3, cancellationToken, onLine);
+                var mergedPath = await MergeVideoWithMp3Async(ffmpegPath!, folder, entry.Id, reuseMp3, cancellationToken, onLine);
+                item.SetPath(MediaKind.Video, mergedPath);
+                item.SetPath(MediaKind.Audio, reuseMp3);
+            }
+            else
+            {
+                var downloadedPath = FindDownloadedFile(folder, entry.Id, kind);
+                item.SetPath(kind, downloadedPath);
+
+                // A full video download may sit next to a previously saved MP3.
+                if (kind == MediaKind.Video)
+                {
+                    var siblingMp3 = FindExistingMp3(folder, entry.Id);
+                    if (siblingMp3 is not null)
+                    {
+                        item.SetPath(MediaKind.Audio, siblingMp3);
+                    }
+                }
             }
 
-            item.FilePath = FindDownloadedFile(folder, entry.Id, kind);
             item.Status = ItemStatus.Complete;
             item.CompletedUtc = DateTimeOffset.UtcNow;
             item.Error = null;
         }
         catch (OperationCanceledException)
         {
-            item.Status = ItemStatus.Failed;
+            item.Percent = null;
+            item.Status = item.HasAnyFile ? ItemStatus.Complete : ItemStatus.Failed;
             item.Error = "Nedladdningen avbröts.";
             store.AddOrUpdate(item);
             await store.SaveAsync();
@@ -183,7 +206,9 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
         }
         catch (Exception ex)
         {
-            item.Status = ItemStatus.Failed;
+            item.Percent = null;
+            // A failed re-download must not hide a file that is still on disk.
+            item.Status = item.HasAnyFile ? ItemStatus.Complete : ItemStatus.Failed;
             // Row status text is user-facing: never a raw (English) exception message.
             item.Error = UiErrors.FromException(ex, "Nedladdningen misslyckades.");
             Log.For(typeof(LibraryDownloadService)).LogError(ex, "Nedladdning misslyckades: {ItemId} {Title}", item.Id, item.Title);
@@ -192,7 +217,19 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
         store.AddOrUpdate(item);
         await store.SaveAsync();
         onItemChanged?.Invoke(item);
+        _ = CacheThumbnailAsync(item, store);
         return item;
+    }
+
+    /// <summary>Best-effort thumbnail cache after the item is already visible/complete.</summary>
+    private static async Task CacheThumbnailAsync(LibraryItem item, LibraryStore store)
+    {
+        var path = await ThumbnailCache.EnsureAsync(item.Id, item.ThumbnailUrl);
+        if (path is not null)
+        {
+            item.LocalThumbnailPath = path;
+            await store.SaveAsync();
+        }
     }
 
     private async Task<string> ResolveYtDlpAsync()
@@ -327,7 +364,7 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
     /// re-encoded to h264 so the result is a playable MP4. The MP3 audio is re-encoded
     /// to AAC (MP3 streams are not valid inside MP4).
     /// </summary>
-    private static async Task MergeVideoWithMp3Async(
+    private static async Task<string> MergeVideoWithMp3Async(
         string ffmpegPath,
         string folder,
         string entryId,
@@ -424,6 +461,8 @@ public sealed class LibraryDownloadService : ILibraryDownloadService
         {
             try { File.Delete(videoFile); } catch { }
         }
+
+        return finalPath;
     }
 
 }

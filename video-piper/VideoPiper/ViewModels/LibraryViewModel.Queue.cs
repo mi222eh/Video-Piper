@@ -24,7 +24,18 @@ public sealed partial class LibraryViewModel
     private bool _isRetryingFailed;
     private LibraryItem? _playingItem;
     private bool _playerPopOutOpen;
+    private string? _playerTitle;
+    private string? _playerSubtitle;
+    private string? _playerVideoId;
+    private MediaKind _playerKind = MediaKind.Audio;
+    private string? _playerSourceUri;
+    private bool _playerIsStream;
+    private bool _playerStreamLoading;
+    private string? _playerStreamStatus;
+    private string? _playerStreamError;
+    private CancellationTokenSource? _streamCts;
     private LibraryQueueEntry? _selectedQueueEntry;
+    private readonly IStreamService _streamService;
 #if WINDOWS
     private PlayerPopOutWindow? _popOutWindow;
 #endif
@@ -68,6 +79,9 @@ public sealed partial class LibraryViewModel
     private readonly ParameterizedRelayCommand _selectQueueEntryCommand;
     private readonly ParameterizedRelayCommand _retryQueueEntryCommand;
     private readonly RelayCommand _toggleQueuePanelCommand;
+    private readonly ParameterizedRelayCommand _switchPlayerKindCommand;
+    private readonly RelayCommand _streamSelectedCommand;
+    private readonly RelayCommand _retryStreamCommand;
 
     private bool _queuePanelOpen;
 
@@ -98,15 +112,22 @@ public sealed partial class LibraryViewModel
     public ICommand SelectQueueEntryCommand => _selectQueueEntryCommand;
     public ICommand RetryQueueEntryCommand => _retryQueueEntryCommand;
     public ICommand ToggleQueuePanelCommand => _toggleQueuePanelCommand;
+    public ICommand SwitchPlayerKindCommand => _switchPlayerKindCommand;
+    public ICommand StreamSelectedCommand => _streamSelectedCommand;
+    public ICommand RetryStreamCommand => _retryStreamCommand;
 
-    public LibraryViewModel(ILibraryDownloadService libraryDownloadService, ISearchService searchService)
+    /// <summary>Raised when the view should start playback (the player's transport Play).</summary>
+    public event Action? PlaybackRequested;
+
+    public LibraryViewModel(ILibraryDownloadService libraryDownloadService, ISearchService searchService, IStreamService streamService)
     {
         _libraryDownloadService = libraryDownloadService;
         _searchService = searchService;
+        _streamService = streamService;
         _browseCommand = new RelayCommand(BrowseAsync, () => !IsDownloading);
         _downloadCommand = new RelayCommand(DownloadAsync, () => CanDownload);
         _stopDownloadCommand = new RelayCommand(StopQueueAsync, () => IsBusy);
-        _playSelectedCommand = new RelayCommand(PlaySelectedAsync, () => SelectedItem is { Status: ItemStatus.Complete } && !string.IsNullOrEmpty(SelectedItem.FilePath));
+        _playSelectedCommand = new RelayCommand(PlaySelectedAsync, () => SelectedItem is { Status: ItemStatus.Complete });
         _deleteSelectedCommand = new RelayCommand(DeleteSelectedAsync, () => SelectedItem is not null);
         _downloadSelectedCommand = new RelayCommand(DownloadSelectedAsync, () => SelectedFileMissing);
         _deselectCommand = new RelayCommand(() => { SelectedItem = null; return Task.CompletedTask; });
@@ -118,9 +139,19 @@ public sealed partial class LibraryViewModel
 
         _pasteCommand = new RelayCommand(PasteAsync, () => !IsBusy);
         _closePlayerCommand = new RelayCommand(ClosePlayer);
-        _popOutPlayerCommand = new RelayCommand(PopOutPlayer, () => PlayingItem is not null && !PlayerIsPopOut);
+        _popOutPlayerCommand = new RelayCommand(PopOutPlayer, () => PlayerSourceUri is not null && !PlayerIsPopOut);
         _clearSearchCommand = new RelayCommand(ClearSearch);
         _clearErrorCommand = new RelayCommand(() => { Error = null; return Task.CompletedTask; });
+        _streamSelectedCommand = new RelayCommand(StreamSelectedAsync, () => SelectedItem is not null && CanStream);
+        _retryStreamCommand = new RelayCommand(RetryStreamAsync, () => PlayerVideoId is not null && CanStream);
+        _switchPlayerKindCommand = new ParameterizedRelayCommand(p =>
+        {
+            if (p is MediaKind kind)
+            {
+                _ = SwitchPlayerKindAsync(kind);
+            }
+            return Task.CompletedTask;
+        });
 
         _selectSectionCommand = new ParameterizedRelayCommand(p =>
         {
@@ -144,9 +175,11 @@ public sealed partial class LibraryViewModel
 
         _executeSearchCommand = new RelayCommand(RunSearchNowAsync, () => !IsSearching);
         _searchResultAudioCommand = new RelayCommand(
-            () => DownloadSearchResultAsAsync(MediaKind.Audio), () => CanDownloadSearchResult);
+            () => DownloadSearchResultAsAsync(MediaKind.Audio), () => CanDownloadSearchAudio);
         _searchResultVideoCommand = new RelayCommand(
-            () => DownloadSearchResultAsAsync(MediaKind.Video), () => CanDownloadSearchResult);
+            () => DownloadSearchResultAsAsync(MediaKind.Video), () => CanDownloadSearchVideo);
+        _playSearchResultCommand = new RelayCommand(PlaySelectedSearchResultAsync, () => CanPlaySearchResult);
+        _streamSearchResultCommand = new RelayCommand(StreamSelectedSearchResultAsync, () => CanStreamSearchResult);
 
         _retryFailedCommand = new RelayCommand(RetryFailedAsync, () => !IsBusy && FailedCount > 0);
         _clearQueueCommand = new RelayCommand(ClearQueueAsync, () => QueueCount > 0 && !IsDownloading);
@@ -285,7 +318,7 @@ public sealed partial class LibraryViewModel
         private set => Set(ref _error, value);
     }
 
-    /// <summary>The item currently loaded in the player (local playback).</summary>
+    /// <summary>The library item behind the current player source, when there is one.</summary>
     public LibraryItem? PlayingItem
     {
         get => _playingItem;
@@ -301,14 +334,138 @@ public sealed partial class LibraryViewModel
         }
     }
 
-    public bool IsPlayerVisible => _playingItem is not null || _selectedFileMissing;
+    /// <summary>Title shown in the player header (library item or YouTube result).</summary>
+    public string? PlayerTitle
+    {
+        get => _playerTitle;
+        private set
+        {
+            if (Set(ref _playerTitle, value))
+            {
+                OnPropertyChanged(nameof(IsPlayerVisible));
+                OnPropertyChanged(nameof(IsDockedPlayerVisible));
+                OnPropertyChanged(nameof(ShowMissingPrompt));
+                _popOutPlayerCommand.RefreshCanExecute();
+            }
+        }
+    }
+
+    public string? PlayerSubtitle
+    {
+        get => _playerSubtitle;
+        private set => Set(ref _playerSubtitle, value);
+    }
+
+    /// <summary>The YouTube id behind the player, when known (needed for streaming/format switching).</summary>
+    public string? PlayerVideoId
+    {
+        get => _playerVideoId;
+        private set
+        {
+            if (Set(ref _playerVideoId, value))
+            {
+                OnPropertyChanged(nameof(PlayerCanSwitchKind));
+                _retryStreamCommand.RefreshCanExecute();
+            }
+        }
+    }
+
+    public MediaKind PlayerKind
+    {
+        get => _playerKind;
+        private set
+        {
+            if (Set(ref _playerKind, value))
+            {
+                OnPropertyChanged(nameof(PlayerIsAudio));
+                OnPropertyChanged(nameof(PlayerIsVideo));
+                OnPropertyChanged(nameof(PlayerKindLabel));
+            }
+        }
+    }
+
+    public bool PlayerIsAudio => _playerKind == MediaKind.Audio;
+    public bool PlayerIsVideo => _playerKind == MediaKind.Video;
+    public string PlayerKindLabel => _playerKind == MediaKind.Audio ? "MP3" : "MP4";
+
+    /// <summary>Local file path or loopback HLS URL for the current source.</summary>
+    public string? PlayerSourceUri
+    {
+        get => _playerSourceUri;
+        private set
+        {
+            if (Set(ref _playerSourceUri, value))
+            {
+                _popOutPlayerCommand?.RefreshCanExecute();
+            }
+        }
+    }
+
+    /// <summary>True when the current source is the online HLS relay (not an offline file).</summary>
+    public bool PlayerIsStream
+    {
+        get => _playerIsStream;
+        private set
+        {
+            if (Set(ref _playerIsStream, value))
+            {
+                OnPropertyChanged(nameof(PlayerSourceLabel));
+            }
+        }
+    }
+
+    public string PlayerSourceLabel =>
+        _playerStreamLoading ? "Buffrar" :
+        _playerStreamError is not null ? "Fel" :
+        _playerIsStream ? "Strömmar" : "Offline";
+
+    public bool PlayerIsStreamLoading
+    {
+        get => _playerStreamLoading;
+        private set
+        {
+            if (Set(ref _playerStreamLoading, value))
+            {
+                OnPropertyChanged(nameof(PlayerSourceLabel));
+            }
+        }
+    }
+
+    public string? PlayerStreamStatus
+    {
+        get => _playerStreamStatus;
+        private set => Set(ref _playerStreamStatus, value);
+    }
+
+    public string? PlayerStreamError
+    {
+        get => _playerStreamError;
+        private set
+        {
+            if (Set(ref _playerStreamError, value))
+            {
+                OnPropertyChanged(nameof(PlayerSourceLabel));
+            }
+        }
+    }
+
+    /// <summary>Streaming needs the Windows media stack (the same one local playback uses).</summary>
+    public bool CanStream => OperatingSystem.IsWindows();
+
+    /// <summary>The MP3/MP4 switch is available once the video id is known.</summary>
+    public bool PlayerCanSwitchKind => _playerVideoId is not null;
+
+    public bool IsPlayerVisible => _playerTitle is not null || _selectedFileMissing;
+
+    /// <summary>The "file missing" prompt shows only while no source (local or stream) is loaded.</summary>
+    public bool ShowMissingPrompt => _selectedFileMissing && _playerTitle is null;
 
     /// <summary>True while the pop-out player window is open (the docked player is hidden).</summary>
     public bool PlayerIsPopOut => _playerPopOutOpen;
 
-    /// <summary>The docked player surface shows only when an item is loaded and the
+    /// <summary>The docked player surface shows only when a source is loaded and the
     /// pop-out window is closed (a missing file or pop-out hides it).</summary>
-    public bool IsDockedPlayerVisible => _playingItem is not null && !_playerPopOutOpen;
+    public bool IsDockedPlayerVisible => _playerTitle is not null && !_playerPopOutOpen;
 
     public bool CanDownload =>
         !IsBusy &&
@@ -380,6 +537,7 @@ public sealed partial class LibraryViewModel
         }
 
         OnPropertyChanged(nameof(ActiveQueueCount));
+        RefreshSearchResultCommands();
     }
 
     public async Task InitializeAsync()
@@ -487,23 +645,35 @@ public sealed partial class LibraryViewModel
             position = _downloadQueue.Count;
             foreach (var entry in list)
             {
-                position++;
-                _downloadQueue.Enqueue(new QueueJob(entry, playlistTitle, kindOverride ?? Kind));
+                var jobKind = kindOverride ?? Kind;
+                var key = QueueKey(entry.Id, jobKind);
+                var job = new QueueJob(entry, playlistTitle, jobKind);
 
-                if (_queueEntryById.TryGetValue(entry.Id, out var existing))
+                if (_queueEntryById.TryGetValue(key, out var existing))
                 {
-                    // Retry of an existing job: reset status and logs.
+                    // Already waiting or downloading in this format: don't add a second job.
+                    if (existing.Status is ItemStatus.Queued or ItemStatus.Downloading)
+                    {
+                        continue;
+                    }
+
+                    // A finished/failed job for the same format: reset its row and re-queue.
                     existing.Status = ItemStatus.Queued;
                     existing.Percent = 0;
+                    existing.Kind = jobKind;
                     existing.ClearLogs();
                     existing.AppendLog("Överför till kön igen.");
                     existing.FlushLog();
-                    continue;
+                }
+                else
+                {
+                    var queueEntry = new LibraryQueueEntry(entry, playlistTitle, position + 1, jobKind);
+                    _queueEntryById[key] = queueEntry;
+                    newEntries.Add(queueEntry);
                 }
 
-                var queueEntry = new LibraryQueueEntry(entry, playlistTitle, position, kindOverride ?? Kind);
-                _queueEntryById[entry.Id] = queueEntry;
-                newEntries.Add(queueEntry);
+                _downloadQueue.Enqueue(job);
+                position++;
             }
             QueueCount = _downloadQueue.Count;
         }
@@ -532,7 +702,13 @@ public sealed partial class LibraryViewModel
         }
     }
 
-    private readonly record struct QueueJob(MediaEntry Entry, string? PlaylistTitle, MediaKind Kind);
+    private readonly record struct QueueJob(MediaEntry Entry, string? PlaylistTitle, MediaKind Kind)
+    {
+        public string QueueKey => LibraryViewModel.QueueKey(Entry.Id, Kind);
+    }
+
+    /// <summary>One queue slot per video *and* format, so MP3 and MP4 can be queued together.</summary>
+    private static string QueueKey(string id, MediaKind kind) => $"{id}|{(kind == MediaKind.Audio ? "a" : "v")}";
 
 
     private void EnsureWorkerStarted()
@@ -581,7 +757,7 @@ public sealed partial class LibraryViewModel
                 LibraryQueueEntry? queueEntry = null;
                 lock (_queueGate)
                 {
-                    _queueEntryById.TryGetValue(job.Entry.Id, out queueEntry);
+                    _queueEntryById.TryGetValue(job.QueueKey, out queueEntry);
                 }
                 // A retry may have changed the format since the entry was first created.
                 // Kind raises PropertyChanged synchronously (LibraryQueueEntry has no
@@ -664,7 +840,7 @@ public sealed partial class LibraryViewModel
                         {
                             UpsertItem(result);
                         }
-                        SyncSelectedSearchResultInLibrary(result.Id, result.Status);
+                        SyncSelectedSearchResultInLibrary(result.Id);
                         RefreshQueuePanelState();
                     });
                 }
@@ -684,7 +860,7 @@ public sealed partial class LibraryViewModel
                             QueueCount--;
                             lock (_queueGate)
                             {
-                                if (_queueEntryById.TryGetValue(remaining.Entry.Id, out var remainingEntry))
+                                if (_queueEntryById.TryGetValue(remaining.QueueKey, out var remainingEntry))
                                 {
                                     remainingEntry.Status = ItemStatus.Failed;
                                     remainingEntry.AppendLog("Avbröts av användaren.");
@@ -735,7 +911,7 @@ public sealed partial class LibraryViewModel
             while (_downloadQueue.TryDequeue(out var job))
             {
                 QueueCount--;
-                if (_queueEntryById.Remove(job.Entry.Id, out var entry) && entry.Status == ItemStatus.Queued)
+                if (_queueEntryById.Remove(job.QueueKey, out var entry) && entry.Status == ItemStatus.Queued)
                 {
                     entry.AppendLog("Tog bort ur kön.");
                     removed.Add(entry);
@@ -813,7 +989,7 @@ public sealed partial class LibraryViewModel
                 Uploader: item.Uploader,
                 DurationSeconds: item.DurationSeconds,
                 Url: $"https://www.youtube.com/watch?v={entry.Id}")
-        }, entry.Playlist, item.Kind);
+        }, entry.Playlist, entry.Kind);
     }
 
     /// <summary>Removes finished (complete/failed) jobs from the queue panel; active and queued jobs stay.</summary>

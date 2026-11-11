@@ -26,6 +26,7 @@
         <SolidColorBrush x:Key="VpErrorBorderBrush" Color="#66EF4444"/>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
         <converters:StatusToBrushConverter x:Key="StatusToBrush"/>
+        <converters:StringToImageSourceConverter x:Key="StringToImageSource"/>
 
 
         <DataTemplate x:Key="LibraryItemTemplate">
@@ -40,15 +41,19 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Icon box -->
-                    <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
+                    <!-- Thumbnail (cached offline when available) with a glyph fallback -->
+                    <Border Grid.Column="0" Width="96" Height="54" CornerRadius="6"
                             Background="{ThemeResource LayerFillColorDefaultBrush}"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="1"
                             VerticalAlignment="Center">
-                        <FontIcon FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource AccentFillColorDefaultBrush}"
-                                  Glyph="{Binding IconGlyph}"/>
+                        <Grid>
+                            <FontIcon FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Foreground="{ThemeResource AccentFillColorDefaultBrush}"
+                                      Glyph="{Binding IconGlyph}"/>
+                            <Image Stretch="UniformToFill"
+                                   Source="{Binding ThumbnailUri, Converter={StaticResource StringToImageSource}}"/>
+                        </Grid>
                     </Border>
 
                     <!-- Details & Progress -->
@@ -87,15 +92,19 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Thumbnail / Video icon placeholder -->
-                    <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
+                    <!-- YouTube thumbnail (remote; cached once downloaded) -->
+                    <Border Grid.Column="0" Width="96" Height="54" CornerRadius="6"
                             Background="{ThemeResource LayerFillColorDefaultBrush}"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="1"
                             VerticalAlignment="Center">
-                        <FontIcon FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource AccentFillColorDefaultBrush}"
-                                  Glyph="&#xE714;"/>
+                        <Grid>
+                            <FontIcon FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Foreground="{ThemeResource AccentFillColorDefaultBrush}"
+                                      Glyph="&#xE714;"/>
+                            <Image Stretch="UniformToFill"
+                                   Source="{Binding ThumbnailUrl, Converter={StaticResource StringToImageSource}}"/>
+                        </Grid>
                     </Border>
 
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">

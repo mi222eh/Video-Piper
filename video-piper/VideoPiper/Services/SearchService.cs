@@ -51,6 +51,10 @@ public sealed partial record SearchResult(string Id, string Title, string? Uploa
     /// <summary>Video description from the full metadata fetch; empty in flat search results.</summary>
     public string? Description { get; init; }
 
+    /// <summary>YouTube thumbnail URL (the mqdefault size is always available for a real video).</summary>
+    public string ThumbnailUrl =>
+        string.IsNullOrEmpty(Id) ? string.Empty : $"https://i.ytimg.com/vi/{Id}/mqdefault.jpg";
+
     /// <summary>
     /// Whether the video has a real video stream, learned from the full metadata fetch
     /// (null until then). Audio-only uploads report false, which hides the

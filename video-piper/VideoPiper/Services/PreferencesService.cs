@@ -59,6 +59,9 @@ public static class PreferencesService
 
     private static string FilePath => Path.Combine(LocalFolderPath, "preferences.json");
 
+    /// <summary>The app's local data folder (preferences, cached thumbnails).</summary>
+    public static string AppDataDirectory => LocalFolderPath;
+
     public static string? GetSavePath()
     {
         try

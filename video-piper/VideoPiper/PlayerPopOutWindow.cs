@@ -1,7 +1,6 @@
 #if WINDOWS
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using VideoPiper.Models;
 
 namespace VideoPiper;
 
@@ -22,19 +21,18 @@ public sealed class PlayerPopOutWindow : Window
     /// <summary>Raised on the UI thread when the pop-out window is closed.</summary>
     public event EventHandler? ClosedChanged;
 
-    public PlayerPopOutWindow(LibraryItem item)
+    public PlayerPopOutWindow(string windowTitle, string sourceUri)
     {
-        var isVideo = item.Kind == MediaKind.Video;
-        Title = string.IsNullOrWhiteSpace(item.Title) ? "Video Piper" : item.Title;
+        Title = string.IsNullOrWhiteSpace(windowTitle) ? "Video Piper" : windowTitle;
 
         var media = new MediaPlayerElement
         {
             AutoPlay = false,
             AreTransportControlsEnabled = true,
             Stretch = Stretch.Uniform,
-            Source = string.IsNullOrEmpty(item.FilePath)
+            Source = string.IsNullOrEmpty(sourceUri)
                 ? null
-                : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(item.FilePath))
+                : Windows.Media.Core.MediaSource.CreateFromUri(new Uri(sourceUri))
         };
 
         _fsButton = new Button

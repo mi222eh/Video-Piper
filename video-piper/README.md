@@ -5,11 +5,17 @@ A lightweight cross-platform desktop application for downloading YouTube videos 
 ## Features
 
 - **Direct YouTube download** — Spawns `yt-dlp` subprocesses with real-time progress streaming
+- **Streaming (Windows)** — A local HLS relay: `yt-dlp` resolves the selected streams, ffmpeg muxes them into a temp HLS playlist served over loopback, and the app plays it without saving a library file. Playback is offline-first — the local MP3/MP4 is used when it exists, and streaming is the fallback
+- **One row per video, both formats** — The index tracks an MP3 and an MP4 for the same video id. If only the audio is offline and you want the video, the player offers to stream or download the missing format; deleting the item removes both
+- **Unified search** — Typing matches your downloaded library instantly (offline, no network); Sök/Enter runs the YouTube search. Both appear in the same search view
+- **Media page** — Clicking a YouTube result opens a page with thumbnail, metadata, offline badges, **Spela** (offline-first), **Strömma** (force online), and per-format download buttons
+- **Offline-first playback** — Selecting an item loads its preferred local format without auto-play; a format switch (MP3/MP4) streams the missing format instead of requiring a download first
+- **Video thumbnails** — YouTube thumbnails in search results and library rows; downloaded items cache their thumbnail under the app data folder for offline display
 - **MP3 or MP4 output** — Audio (MP3) or video (MP4, up to a user-set resolution, default 1080p); the choice is persisted
 - **Per-item format override** — Any library item can be re-downloaded as MP3 **or** MP4 regardless of the global toggle (per-item buttons in the selected-item bar)
 - **MP3 reuse for MP4** — When an item already has a downloaded MP3 and you request the MP4 edition, only the **video stream** is downloaded and the existing MP3 is merged into it with the app-managed ffmpeg — the audio is never re-downloaded or re-encoded. If the source has no separate video stream it falls back to a normal full video download
 - **Video quality settings** — Choose a maximum resolution (480–2160p) and a minimum framerate (24/30/60) for new downloads (default 1080p / 60 fps). The height is capped "at-or-below" the preference, so the **closest available** resolution is picked — a preference bigger than the source's max yields the largest available stream
-- **Library mode** — YouTube-style layout: a centered player with a right-hand search + collection list; persistent library organized as `Channel / Playlist`, with per-item progress and local playback
+- **Library mode** — YouTube-style layout: a left sidebar with sections/counts beside a full-width browse area (collection or search results, or the media page), with the player dock, selected-item actions, status cards and queue in a bottom band; persistent library organized as `Channel / Playlist`
 - **No auto-play** — Selecting an item loads it into the player without starting playback; a **missing-file prompt** with a re-download button appears when a completed item's file is gone
 - **Download queue** — Library downloads run through a single-worker queue with a persistent queue card (one row per job, live progress, "Kö N" badge); failed items can be retried in bulk from the **Misslyckades** section
 - **Per-item logs** — Click a queue row to open its live log panel, streaming that job's `yt-dlp` output line by line
@@ -49,7 +55,9 @@ VideoPiper/
 │   ├── LibraryDownloadService.cs # Pre-fetch + sequential download into the library
 │   ├── LibraryStore.cs        # Library root, .videopiper/library.json index, folder resolution
 │   ├── YtDlpJson.cs           # Shared parser for yt-dlp -J output (playlist vs single)
-│   ├── SearchService.cs       # Debounced YouTube search via youtubesearch extractor
+│   ├── SearchService.cs       # YouTube search (Sök/Enter) + detail metadata
+│   ├── StreamService.cs       # HLS relay: yt-dlp URLs -> ffmpeg HLS -> loopback HTTP
+│   ├── ThumbnailCache.cs      # Downloads/caches YouTube thumbnails for offline rows
 │   ├── SystemService.cs       # Tool resolution (app-local Tools/ only) + once-per-day background update check
 │   ├── FolderPickerService.cs # Native Windows folder picker with HWND binding
 │   ├── PreferencesService.cs  # JSON-based preferences persistence
@@ -68,7 +76,7 @@ VideoPiper/
 
 - **C# Markup DSL**: The UI is authored declaratively in C# using Uno Platform C# Markup (`Uno.Extensions.Markup`), providing strong typing, refactoring safety, and fluent layout construction.
 - **MVVM Pattern**: Each tab binds to its own view model via fluent `.Binding(...)` expressions. Commands handle user interactions.
-- **No HTTP Server**: Runs entirely as a native application with no local server needed.
+- **No API server**: Runs entirely as a native application. The only loopback server is the transient HLS relay used by Windows streaming (it serves the current temp playlist/segments and is stopped when playback ends).
 - **Process-based Downloads**: `yt-dlp` is spawned directly via `System.Diagnostics.Process` with stdout/stderr piped for real-time progress parsing.
 - **Persistent Library**: The library index lives at `<root>/.videopiper/library.json` (written atomically); media files are organized as `<root>/<Channel>/<Playlist>/`.
 - **JSON Preferences**: User settings (save path, app mode, library root, output format, video quality, delete mode, theme) are stored as JSON files in the app's local data folder (`ApplicationData.Current.LocalFolder`).

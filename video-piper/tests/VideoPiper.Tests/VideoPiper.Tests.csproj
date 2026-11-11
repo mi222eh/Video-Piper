@@ -19,6 +19,8 @@
     <Compile Include="..\..\VideoPiper\Services\YtDlpJson.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\DownloadService.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\SearchService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\StreamService.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\VideoPiper\Services\ThumbnailCache.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\LibraryStore.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\PreferencesService.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\VideoPiper\Services\SystemService.cs" Link="Services\%(Filename)%(Extension)" />

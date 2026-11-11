@@ -65,6 +65,15 @@ public sealed class LibraryStore
                     {
                         _items.AddRange(index.Items);
                     }
+
+                    // One video can have both an MP3 and an MP4. Indexes written before
+                    // those fields existed carry only Kind + FilePath; fill both paths
+                    // (the sibling format is found by the [id] marker in the same folder).
+                    foreach (var item in _items)
+                    {
+                        item.MigratePaths();
+                        item.LocalThumbnailPath ??= ThumbnailCache.TryGet(item.Id);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -130,12 +139,9 @@ public sealed class LibraryStore
     /// </summary>
     public void DeleteMediaFiles(LibraryItem item)
     {
-        if (string.IsNullOrEmpty(item.FilePath))
-        {
-            return;
-        }
-
-        var folder = Path.GetDirectoryName(item.FilePath);
+        var folder = new[] { item.VideoFilePath, item.AudioFilePath, item.FilePath }
+            .Select(Path.GetDirectoryName)
+            .FirstOrDefault(dir => !string.IsNullOrEmpty(dir) && Directory.Exists(dir));
         if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
         {
             return;
@@ -189,7 +195,11 @@ public sealed class LibraryStore
         }
     }
 
-    /// <summary>Re-syncs the index with disk: complete items whose file vanished are marked failed.</summary>
+    /// <summary>
+    /// Re-syncs the index with disk: a recorded file that vanished is forgotten, and an
+    /// item whose last file disappeared is marked failed. An item that still has one of
+    /// its two formats stays complete.
+    /// </summary>
     public int SyncWithDisk()
     {
         var changed = 0;
@@ -197,11 +207,27 @@ public sealed class LibraryStore
         {
             foreach (var item in _items)
             {
-                if (item.Status == ItemStatus.Complete &&
-                    (!string.IsNullOrEmpty(item.FilePath) && !File.Exists(item.FilePath)))
+                if (!string.IsNullOrEmpty(item.AudioFilePath) && !File.Exists(item.AudioFilePath))
+                {
+                    item.AudioFilePath = null;
+                    changed++;
+                }
+                if (!string.IsNullOrEmpty(item.VideoFilePath) && !File.Exists(item.VideoFilePath))
+                {
+                    item.VideoFilePath = null;
+                    changed++;
+                }
+
+                if (item.Status == ItemStatus.Complete && !item.HasAnyFile)
                 {
                     item.Status = ItemStatus.Failed;
                     item.Error = "Filen hittades inte på disk.";
+                    changed++;
+                }
+                else if (item.Status == ItemStatus.Failed && item.HasAnyFile)
+                {
+                    item.Status = ItemStatus.Complete;
+                    item.Error = null;
                     changed++;
                 }
             }
@@ -226,17 +252,26 @@ public sealed class LibraryStore
         return folder;
     }
 
-    /// <summary>Persists the index atomically.</summary>
+    /// <summary>Persists the index atomically. A failed write (locked/read-only folder) is
+    /// logged and swallowed: losing the persisted copy must never crash the UI or kill the
+    /// download worker.</summary>
     public Task SaveAsync()
     {
         lock (_gate)
         {
-            Directory.CreateDirectory(IndexDirectory);
+            try
+            {
+                Directory.CreateDirectory(IndexDirectory);
 
-            var tempPath = IndexFilePath + ".tmp";
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(new Index(SchemaVersion, _items.ToList())));
-            File.Move(tempPath, IndexFilePath, overwrite: true);
-            Log.For(typeof(LibraryStore)).LogDebug("Sparade index med {Count} objekt", _items.Count);
+                var tempPath = IndexFilePath + ".tmp";
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(new Index(SchemaVersion, _items.ToList())));
+                File.Move(tempPath, IndexFilePath, overwrite: true);
+                Log.For(typeof(LibraryStore)).LogDebug("Sparade index med {Count} objekt", _items.Count);
+            }
+            catch (Exception ex)
+            {
+                Log.For(typeof(LibraryStore)).LogError(ex, "Kunde inte spara index {Path}", IndexFilePath);
+            }
         }
 
         return Task.CompletedTask;

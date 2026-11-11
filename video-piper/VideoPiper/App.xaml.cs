@@ -82,6 +82,7 @@ public partial class App : Application
                     services.AddSingleton<Services.IDownloadService, Services.DownloadService>();
                     services.AddSingleton<Services.ILibraryDownloadService, Services.LibraryDownloadService>();
                     services.AddSingleton<Services.ISearchService, Services.SearchService>();
+                    services.AddSingleton<Services.IStreamService, Services.StreamService>();
 
                     // View models (resolved from App.Host.Services by MainPage).
                     services.AddSingleton<ViewModels.MainViewModel>();
